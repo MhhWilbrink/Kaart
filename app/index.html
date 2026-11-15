@@ -78,6 +78,19 @@
   .evrow .info b { display:block; font-weight:600; }
   .evrow .count { color:var(--muted); font-size:.8rem; }
   .row2 { display:flex; gap:8px; } .row2 > div { flex:1; min-width:0; }
+  .photos { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .photos:empty { display:none; }
+  .thumb { position:relative; aspect-ratio:1; border:0; padding:0; border-radius:10px; overflow:hidden; background:#e5e7eb; cursor:pointer; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb.loading::after { content:''; position:absolute; inset:0; margin:auto; width:22px; height:22px; border-radius:50%; border:3px solid #cbd5e1; border-top-color:var(--primary); animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .addphoto { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; padding:12px; border:1.5px dashed #cbd5e1; border-radius:12px; color:var(--primary); font-weight:600; font-size:.95rem; cursor:pointer; }
+  .addphoto.off { opacity:.5; pointer-events:none; }
+  #viewer { position:fixed; inset:0; z-index:30; background:#000; display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #viewer img { flex:1; min-height:0; object-fit:contain; width:100%; }
+  #viewer .bar { display:flex; gap:10px; padding:12px 14px; }
+  #viewer .bar .btn { background:#1f2937; }
+  #viewer .bar .btn.del { background:#7f1d1d; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -121,6 +134,17 @@
       <h1 id="dTitle" style="font-size:1.1rem"></h1>
     </header>
     <div id="dInfo"></div>
+
+    <div class="panel" id="photoPanel">
+      <h2>Photos</h2>
+      <div class="photos" id="photoGrid"></div>
+      <label class="addphoto" id="addPhotoBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        <span>Add photo</span>
+        <input type="file" id="photoInput" accept="image/*" hidden>
+      </label>
+      <p class="muted small" id="photoHint" style="margin:6px 0 0">Badge, business card, or a photo of the person or their product.</p>
+    </div>
 
     <div class="panel" id="addFields" hidden>
       <h2>Contact</h2>
@@ -219,6 +243,13 @@
     <button class="btn" id="addBtn">+ Add contact manually</button>
   </div>
 </div>
+<div id="viewer" hidden>
+  <img id="viewerImg" alt="Contact photo">
+  <div class="bar">
+    <button class="btn" id="viewerClose" type="button">Close</button>
+    <button class="btn del" id="viewerDelete" type="button">Delete photo</button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
@@ -262,6 +293,7 @@ function idb(mode, fn) {
   });
 }
 const idbSet = (k, v) => idb('readwrite', s => s.put(v, k)).catch(() => {});
+const idbGet = k => idb('readonly', s => s.get(k)).catch(() => null);
 
 /* ---------- state ---------- */
 let token = ls.get('ownerToken', null);
@@ -435,6 +467,7 @@ function renderList() {
     const badges = evs.map(e => `<span class="badge event">${esc(e.name)}</span>`).join('') +
       (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(t)}</span>`).join('') +
       (c.followUp ? `<span class="badge ${c.followUp <= today ? 'due' : ''}">Follow up ${c.followUp <= today ? 'now' : c.followUp}</span>` : '') +
+      ((c.photos || []).length ? `<span class="badge">${c.photos.length} photo${c.photos.length > 1 ? 's' : ''}</span>` : '') +
       (pend.has(c.id) ? `<span class="badge pending">Not synced yet</span>` : '');
     b.innerHTML = `<div class="top"><span class="name">${isNew ? '<span class="new"></span>' : ''}${esc(clean(c.name))}</span><span class="time">${esc(timeAgo(c.time))}</span></div>` +
       (co ? `<div class="company${co.guess ? ' guess' : ''}">${esc(co.text)}</div>` : '') +
@@ -517,6 +550,8 @@ function openContact(id) {
     </div>`;
   $('addFields').hidden = true;
   $('deletePanel').hidden = false;
+  pendingPhotos = [];
+  renderPhotos();
   $('myNotes').value = form.myNotes;
   $('followDate').value = form.followUp;
   $('saveBtn').textContent = 'Save';
@@ -531,6 +566,8 @@ function openAdd() {
   $('dInfo').innerHTML = '';
   $('addFields').hidden = false;
   $('deletePanel').hidden = true;
+  pendingPhotos = [];
+  renderPhotos();
   ['aName', 'aPhone', 'aEmail', 'aCompany'].forEach(k => $(k).value = '');
   $('myNotes').value = ''; $('followDate').value = '';
   $('saveBtn').textContent = 'Add contact';
@@ -541,7 +578,7 @@ function openAdd() {
 
 function localFromAdd(d) {
   return { id: d.clientId, time: d.clientTimestamp, name: d.name, email: d.email, phone: d.phone, company: d.company,
-           note: '', cardId: '', myNotes: d.myNotes, tags: d.tags, followUp: d.followUp, updated: '', source: d.source };
+           note: '', cardId: '', myNotes: d.myNotes, tags: d.tags, followUp: d.followUp, updated: '', source: d.source, photos: [] };
 }
 
 $('saveBtn').addEventListener('click', async () => {
@@ -567,14 +604,119 @@ $('saveBtn').addEventListener('click', async () => {
   await flushQueue();
   $('saveBtn').disabled = false;
   const stillQueued = queue().some(o => (o.data.id || o.data.clientId) === (data.id || data.clientId));
-  toast(stillQueued ? 'Saved on this phone. Will sync when online.' : 'Saved');
+  const photosToSend = current.isNew ? pendingPhotos.slice() : [];
+  pendingPhotos = [];
   location.hash = '';
+  if (photosToSend.length && stillQueued) { toast('Contact saved on this phone. The photos were not saved: they need a connection.'); return; }
+  toast(stillQueued ? 'Saved on this phone. Will sync when online.' : 'Saved');
+  if (photosToSend.length) {
+    let okCount = 0;
+    for (const url of photosToSend) {
+      try { const c = await api('addPhoto', { id: data.clientId, dataUrl: url }); cachePhoto(c.photos[c.photos.length - 1], url); replaceContact(c); okCount++; } catch (e) { toast(e.message); }
+    }
+    if (okCount) { toast('Saved with ' + okCount + ' photo' + (okCount > 1 ? 's' : '')); renderList(); }
+  }
 });
 
 /* ---------- settings & push ---------- */
+/* ---------- contact photos ---------- */
+let pendingPhotos = [];                 // photos picked while adding a new contact (uploaded after it is saved)
+const photoMem = new Map();             // photo id -> data URL (also kept in IndexedDB for offline viewing)
+function cachePhoto(id, url) { photoMem.set(id, url); idbSet('photo:' + id, url); }
+async function photoUrl(contactId, pid) {
+  if (photoMem.has(pid)) return photoMem.get(pid);
+  const stored = await idbGet('photo:' + pid);
+  if (stored) { photoMem.set(pid, stored); return stored; }
+  const url = await api('photo', { id: contactId, photo: pid });
+  cachePhoto(pid, url);
+  return url;
+}
+function replaceContact(c) {
+  const i = contacts.findIndex(x => x.id === c.id);
+  if (i >= 0) contacts[i] = Object.assign(contacts[i], c); else contacts.unshift(c);
+  if (current && current.id === c.id) Object.assign(current, c);
+  ls.set('ownerRecent', contacts);
+}
+
+function renderPhotos() {
+  const grid = $('photoGrid'); grid.innerHTML = '';
+  const isNew = current && current.isNew;
+  const ids = isNew ? [] : (current.photos || []);
+  const count = isNew ? pendingPhotos.length : ids.length;
+  const add = (src, onOpen, loading) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'thumb' + (loading ? ' loading' : '');
+    if (src) { const img = document.createElement('img'); img.src = src; img.alt = 'Photo'; b.appendChild(img); }
+    b.addEventListener('click', onOpen); grid.appendChild(b); return b;
+  };
+  if (isNew) pendingPhotos.forEach((url, i) => add(url, () => openViewer(url, () => { pendingPhotos.splice(i, 1); renderPhotos(); })));
+  else ids.forEach(pid => {
+    const b = add(photoMem.get(pid), () => { const u = photoMem.get(pid); if (u) openViewer(u, () => deletePhoto(current.id, pid)); }, !photoMem.has(pid));
+    if (!photoMem.has(pid)) photoUrl(current.id, pid).then(url => {
+      b.classList.remove('loading'); const img = document.createElement('img'); img.src = url; img.alt = 'Photo'; b.appendChild(img);
+    }).catch(() => { b.classList.remove('loading'); b.textContent = navigator.onLine ? '!' : 'Offline'; });
+  });
+  const full = count >= 6;
+  $('addPhotoBtn').classList.toggle('off', full);
+  $('addPhotoBtn').querySelector('span').textContent = full ? 'Maximum of 6 photos' : count ? 'Add another photo' : 'Add photo';
+}
+
+// Shrink to max 1600 px JPEG on the phone: faster upload, small enough for the sheet's Drive folder
+async function shrink(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) {
+    bmp = await new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('This photo could not be read. Try a JPEG or PNG.')); img.src = URL.createObjectURL(file); });
+  }
+  const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight;
+  const scale = Math.min(1, 1600 / Math.max(w, h));
+  const cv = document.createElement('canvas'); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  let q = 0.82, url = cv.toDataURL('image/jpeg', q);
+  while (url.length > 3.5e6 && q > 0.4) { q -= 0.15; url = cv.toDataURL('image/jpeg', q); }
+  return url;
+}
+
+$('photoInput').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file || !current) return;
+  let url;
+  try { url = await shrink(file); } catch (err) { toast(err.message); return; }
+  if (current.isNew) { pendingPhotos.push(url); renderPhotos(); return; }
+  if (!navigator.onLine) { toast('Adding photos needs an internet connection.'); return; }
+  const id = current.id;
+  if (queue().some(o => o.action === 'add' && o.data.clientId === id)) await flushQueue();
+  if (queue().some(o => o.action === 'add' && o.data.clientId === id)) { toast('This contact has not synced yet. Try again in a moment.'); return; }
+  $('addPhotoBtn').classList.add('off'); $('addPhotoBtn').querySelector('span').textContent = 'Uploading…';
+  try {
+    const c = await api('addPhoto', { id, dataUrl: url });
+    cachePhoto(c.photos[c.photos.length - 1], url);
+    replaceContact(c);
+    toast('Photo added');
+  } catch (err) { toast(err.message); }
+  if (current && current.id === id) renderPhotos();
+});
+
+let viewerDelete = null;
+function openViewer(url, onDelete) { $('viewerImg').src = url; viewerDelete = onDelete; $('viewer').hidden = false; }
+function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); viewerDelete = null; }
+$('viewerClose').addEventListener('click', closeViewer);
+$('viewerDelete').addEventListener('click', () => { const fn = viewerDelete; if (!fn || !confirm('Delete this photo?')) return; closeViewer(); fn(); });
+window.addEventListener('hashchange', closeViewer);
+
+async function deletePhoto(contactId, pid) {
+  if (!navigator.onLine) { toast('Deleting photos needs an internet connection.'); return; }
+  try {
+    const c = await api('removePhoto', { id: contactId, photo: pid });
+    photoMem.delete(pid); idbSet('photo:' + pid, null);
+    replaceContact(c); toast('Photo deleted');
+  } catch (err) { toast(err.message); }
+  if (current && current.id === contactId) renderPhotos();
+}
+
 $('deleteBtn').addEventListener('click', async () => {
   if (!current || current.isNew) return;
-  if (!confirm('Delete ' + clean(current.name) + '? This also removes the row from your sheet and cannot be undone.')) return;
+  if (!confirm('Delete ' + clean(current.name) + '? This also removes the row from your sheet' + ((current.photos || []).length ? ' and the photos' : '') + ', and cannot be undone.')) return;
   const id = current.id;
   contacts = contacts.filter(c => c.id !== id);
   ls.set('ownerRecent', contacts);
@@ -589,12 +731,12 @@ $('exportBtn').addEventListener('click', async () => {
   const rows = visibleContacts();
   if (!rows.length) return;
   const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  const head = ['Date', 'Time', 'Name', 'Company', 'Email', 'Phone', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source'];
+  const head = ['Date', 'Time', 'Name', 'Company', 'Email', 'Phone', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos'];
   const lines = [head].concat(rows.map(c => {
     const d = new Date(c.time), tags = c.tags || [];
     return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.email), clean(c.phone),
       eventsOf(c).map(e => e.name).join(', '), tags.filter(t => TEMPS.includes(t)).join(', '), tags.filter(t => !TEMPS.includes(t)).join(', '),
-      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || '')];
+      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || ''];
   })).map(r => r.map(cell).join(';'));
   // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
   const csv = '\ufeff' + lines.join('\r\n');
