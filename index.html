@@ -66,6 +66,8 @@
       <input id="name" name="name" required maxlength="100" autocomplete="name">
       <label for="company" class="muted">Company</label>
       <input id="company" name="company" maxlength="100" autocomplete="organization">
+      <label for="title" class="muted">Job title</label>
+      <input id="title" name="title" maxlength="120" autocomplete="organization-title">
       <div class="pair">
         <div>
           <label for="email" class="muted">Email</label>
@@ -266,7 +268,7 @@ function downloadVCard() {
 function prefillMe() {
   const me = store.get(ME_KEY);
   if (!me) return;
-  ["name", "email", "phone", "company"].forEach(k => { if (me[k]) document.getElementById(k).value = me[k]; });
+  ["name", "email", "phone", "company", "title"].forEach(k => { if (me[k]) document.getElementById(k).value = me[k]; });
   document.getElementById("remember").checked = true;
   document.getElementById("submitBtn").textContent = "Share my details (one tap)";
 }
@@ -314,7 +316,7 @@ form.addEventListener("submit", async e => {
   if (phone && phoneDigits(phone).length < 6) { statusEl.textContent = "Please check your phone number."; return; }
   if (!document.getElementById("consent").checked) { statusEl.textContent = "Please tick the consent box to share your details."; return; }
 
-  const me = { name, email, phone, company: d.company.trim() };
+  const me = { name, email, phone, company: d.company.trim(), title: (d.title || "").trim() };
   if (document.getElementById("remember").checked) store.set(ME_KEY, me); else store.del(ME_KEY);
 
   if (!ENDPOINT) { statusEl.textContent = "Card not loaded yet. Please check your connection."; return; }
