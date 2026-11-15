@@ -64,6 +64,8 @@
     <form id="shareForm" novalidate>
       <label for="name" class="muted">Name *</label>
       <input id="name" name="name" required maxlength="100" autocomplete="name">
+      <label for="company" class="muted">Company</label>
+      <input id="company" name="company" maxlength="100" autocomplete="organization">
       <div class="pair">
         <div>
           <label for="email" class="muted">Email</label>
@@ -76,9 +78,7 @@
       </div>
       <p class="muted" style="font-size:.8rem;margin:6px 0 0">Email or phone is enough.</p>
       <details>
-        <summary>Add company or a note (optional)</summary>
-        <label for="company" class="muted">Organisation</label>
-        <input id="company" name="company" maxlength="100" autocomplete="organization">
+        <summary>Add a note (optional)</summary>
         <label for="note" class="muted">Note (e.g. where we met)</label>
         <textarea id="note" name="note" rows="2" maxlength="500"></textarea>
       </details>

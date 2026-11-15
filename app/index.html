@@ -60,6 +60,24 @@
   .check { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:.9rem; }
   .check input { width:auto; }
   .err { color:#b91c1c; font-size:.9rem; min-height:1.2em; margin-top:8px; }
+  .item .company { font-size:.92rem; margin-top:1px; }
+  .item .company.guess { color:var(--muted); font-style:italic; }
+  .search { position:relative; margin-bottom:8px; }
+  .search input { padding-left:36px; }
+  .search svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted); }
+  .filters { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:6px; scrollbar-width:none; }
+  .filters::-webkit-scrollbar { display:none; }
+  .filters .chip { white-space:nowrap; padding:7px 12px; font-size:.85rem; flex:0 0 auto; }
+  .listbar { display:flex; align-items:center; justify-content:space-between; margin:4px 2px 8px; font-size:.85rem; color:var(--muted); }
+  .linkbtn { background:none; border:0; color:var(--primary); font:inherit; font-weight:600; cursor:pointer; padding:4px 0; }
+  .badge.event { background:#ecfdf5; color:#047857; }
+  .danger { color:#b91c1c !important; border-color:#fecaca !important; }
+  .evrow { display:flex; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+  .evrow:first-child { border-top:0; }
+  .evrow .info { flex:1; min-width:0; }
+  .evrow .info b { display:block; font-weight:600; }
+  .evrow .count { color:var(--muted); font-size:.8rem; }
+  .row2 { display:flex; gap:8px; } .row2 > div { flex:1; min-width:0; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -87,6 +105,12 @@
       <button class="iconbtn" id="settingsBtn" aria-label="Settings">Settings</button>
     </header>
     <div id="netBanner"></div>
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="q" placeholder="Search name or company" autocomplete="off" aria-label="Search name or company">
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="listbar"><span id="count"></span><button class="linkbtn" id="exportBtn" type="button">Export</button></div>
     <div id="list"></div>
   </section>
 
@@ -135,6 +159,9 @@
       <textarea id="myNotes" placeholder="What did you talk about?"></textarea>
       <p class="muted small" style="margin:6px 0 0">Tip: tap the microphone on your keyboard to dictate.</p>
     </div>
+    <div class="panel" id="deletePanel">
+      <button class="btn ghost danger" id="deleteBtn" type="button" style="width:100%">Delete contact</button>
+    </div>
   </section>
 
   <!-- SETTINGS -->
@@ -143,6 +170,23 @@
       <button class="iconbtn" id="backBtn2">Back</button>
       <h1 style="font-size:1.1rem">Settings</h1>
     </header>
+    <div class="panel">
+      <h2>Events</h2>
+      <p class="small muted" style="margin:0 0 6px">Contacts from these dates are grouped under the event automatically.</p>
+      <div id="evList"></div>
+      <form id="evForm" style="margin-top:6px">
+        <label for="evName" id="evFormTitle">New event</label>
+        <input id="evName" placeholder="e.g. UDT 2026" maxlength="60" autocomplete="off">
+        <div class="row2">
+          <div><label for="evStart">First day</label><input type="date" id="evStart"></div>
+          <div><label for="evEnd">Last day</label><input type="date" id="evEnd"></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="evSave" type="submit">Save event</button>
+          <button class="btn ghost" id="evCancel" type="button" hidden>Cancel</button>
+        </div>
+      </form>
+    </div>
     <div class="panel">
       <h2>Notifications</h2>
       <p class="small" id="pushStatus"></p>
@@ -223,6 +267,8 @@ const idbSet = (k, v) => idb('readwrite', s => s.put(v, k)).catch(() => {});
 let token = ls.get('ownerToken', null);
 let contacts = ls.get('ownerRecent', []);
 let seenUpTo = ls.get('ownerSeen', '');
+let events = ls.get('ownerEvents', []);
+let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
 let current = null;       // contact being edited, or {isNew:true}
 let form = null;          // {tags:Set, followUp, myNotes}
 
@@ -266,6 +312,14 @@ async function api(action, data = {}) {
 const queue = () => ls.get('ownerQueue', []);
 function enqueue(op) {
   let q = queue();
+  if (op.action === 'deleteContact') {
+    const id = op.data.id;
+    const hadAdd = q.some(x => x.action === 'add' && x.data.clientId === id);
+    q = q.filter(x => (x.data.id || x.data.clientId) !== id);            // drop pending edits of this contact
+    if (!hadAdd) q.push(op);                                             // never synced: nothing to delete on the server
+    ls.set('ownerQueue', q);
+    return;
+  }
   if (op.action === 'update') q = q.filter(x => !(x.action === 'update' && x.data.id === op.data.id));   // keep the newest only
   if (op.action === 'update') {
     const pendingAdd = q.find(x => x.action === 'add' && x.data.clientId === op.data.id);
@@ -282,7 +336,8 @@ async function flushQueue() {
   flushing = true;
   const left = [];
   for (const op of q) {
-    try { await api(op.action, op.data); } catch (e) { left.push(op); }
+    try { await api(op.action, op.data); }
+    catch (e) { if (!(op.action === 'deleteContact' && /not found/i.test(e.message))) left.push(op); }   // already gone = done
   }
   ls.set('ownerQueue', left);
   flushing = false;
@@ -315,41 +370,95 @@ function renderBanner() {
     : q ? `<div class="banner sync">${q} change${q > 1 ? 's' : ''} waiting to sync…</div>` : '';
 }
 
-function pendingIds() { return new Set(queue().map(o => o.data.id || o.data.clientId)); }
+function pendingIds() { return new Set(queue().filter(o => o.action !== 'deleteContact').map(o => o.data.id || o.data.clientId)); }
+
+/* ---------- company, events, search ---------- */
+const FREEMAIL = /^(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|icloud|me|mac|aol|gmx|web|proton|protonmail|pm|ziggo|kpnmail|kpnplanet|planet|hetnet|home|xs4all|telfort|chello|upcmail|zonnet|quicknet|online|t-online|freenet|orange|wanadoo|free|laposte|libero|mail|yandex|zoho)\./i;
+// Company as typed by the scanner; otherwise the domain of a work email, shown as a guess
+function companyOf(c) {
+  const co = clean(c.company);
+  if (co) return { text: co, guess: false };
+  const dom = (clean(c.email).split('@')[1] || '').toLowerCase();
+  return dom && !FREEMAIL.test(dom) ? { text: dom, guess: true } : null;
+}
+const localDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('sv-SE'); };
+const eventsOf = c => { const d = localDate(c.time); return d ? events.filter(e => d >= e.start && d <= e.end) : []; };
+const fold = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtRange = e => e.start === e.end ? fmtDate(e.start) : fmtDate(e.start) + ' – ' + fmtDate(e.end);
+
+function visibleContacts() {
+  const words = fold($('q').value).split(/\s+/).filter(Boolean);
+  const today = todayStr();
+  return contacts.filter(c => {
+    if (filter === 'followup' ? !(c.followUp && c.followUp <= today) : filter && !eventsOf(c).some(e => e.id === filter)) return false;
+    if (!words.length) return true;
+    const co = companyOf(c);
+    const hay = fold([clean(c.name), co ? co.text : '', clean(c.email)].join(' '));
+    return words.every(w => hay.includes(w));
+  });
+}
+
+function renderFilters() {
+  if (filter && filter !== 'followup' && !events.some(e => e.id === filter)) { filter = ''; ls.set('ownerFilter', ''); }
+  const box = $('filters'); box.innerHTML = '';
+  const add = (label, val) => box.appendChild(chip(label, filter === val, '', () => {
+    filter = filter === val && val ? '' : val; ls.set('ownerFilter', filter); renderList();
+  }));
+  add('All', '');
+  const due = contacts.filter(c => c.followUp && c.followUp <= todayStr()).length;
+  if (due) add('Follow up (' + due + ')', 'followup');
+  events.forEach(e => add(e.name, e.id));
+  const on = box.querySelector('.on'); if (on && on.scrollIntoView && filter) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
 
 function renderList() {
   renderBanner();
+  renderFilters();
   const list = $('list');
+  const shown = visibleContacts();
+  const searching = $('q').value.trim();
+  $('count').textContent = contacts.length ? shown.length + (shown.length === 1 ? ' contact' : ' contacts') : '';
+  $('exportBtn').hidden = !shown.length;
   if (!contacts.length) { list.innerHTML = `<div class="empty">No contacts yet.<br>They appear here as soon as someone shares their details.</div>`; return; }
+  if (!shown.length) { list.innerHTML = `<div class="empty">${searching ? 'No contacts match your search.' : 'No contacts in this selection.'}</div>`; return; }
   const pend = pendingIds();
   const today = todayStr();
   list.innerHTML = '';
-  contacts.forEach(c => {
+  shown.forEach(c => {
     const b = document.createElement('button');
     b.className = 'item';
-    const isNew = seenUpTo && c.time > seenUpTo && !c.myNotes && !c.tags.length;
-    const sub = [clean(c.company), c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : '')].filter(Boolean).join(' · ');
-    const badges = c.tags.map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(t)}</span>`).join('') +
+    const isNew = seenUpTo && c.time > seenUpTo && !c.myNotes && !(c.tags || []).length;
+    const co = companyOf(c);
+    const evs = filter && filter !== 'followup' ? [] : eventsOf(c);
+    const meta = c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : '');
+    const badges = evs.map(e => `<span class="badge event">${esc(e.name)}</span>`).join('') +
+      (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(t)}</span>`).join('') +
       (c.followUp ? `<span class="badge ${c.followUp <= today ? 'due' : ''}">Follow up ${c.followUp <= today ? 'now' : c.followUp}</span>` : '') +
       (pend.has(c.id) ? `<span class="badge pending">Not synced yet</span>` : '');
     b.innerHTML = `<div class="top"><span class="name">${isNew ? '<span class="new"></span>' : ''}${esc(clean(c.name))}</span><span class="time">${esc(timeAgo(c.time))}</span></div>` +
-      (sub ? `<div class="sub">${esc(sub)}</div>` : '') + (badges ? `<div class="badges">${badges}</div>` : '');
+      (co ? `<div class="company${co.guess ? ' guess' : ''}">${esc(co.text)}</div>` : '') +
+      (meta ? `<div class="sub">${esc(meta)}</div>` : '') + (badges ? `<div class="badges">${badges}</div>` : '');
     b.addEventListener('click', () => { location.hash = 'c=' + encodeURIComponent(c.id); });
     list.appendChild(b);
   });
 }
+let qTimer;
+$('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(renderList, 120); });
 
 async function refresh(silent) {
   if (!navigator.onLine) { renderBanner(); return; }
   try {
-    const fresh = await api('recent', { limit: 100 });
+    const [fresh, evs] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null)]);
+    if (Array.isArray(evs)) { events = evs; ls.set('ownerEvents', events); }
     // keep local, not-yet-synced edits visible
     const q = queue();
     q.forEach(op => {
       if (op.action === 'update') { const c = fresh.find(x => x.id === op.data.id); if (c) Object.assign(c, op.data); }
       if (op.action === 'add' && !fresh.some(x => x.id === op.data.clientId)) fresh.unshift(localFromAdd(op.data));
     });
-    contacts = fresh;
+    const deleting = new Set(q.filter(op => op.action === 'deleteContact').map(op => op.data.id));
+    contacts = fresh.filter(c => !deleting.has(c.id));
     ls.set('ownerRecent', contacts);
     if (!$('vList').hidden) renderList();
   } catch (e) { if (!silent) toast(e.message); }
@@ -396,7 +505,8 @@ function openContact(id) {
   const wa = phone.replace(/[^\d+]/g, '').replace(/^\+/, '').replace(/^00/, '');
   $('dInfo').innerHTML = `<div class="panel">
       <div style="font-weight:600;font-size:1.1rem">${esc(clean(c.name))}</div>
-      <div class="muted small">${esc([clean(c.company), timeAgo(c.time), c.cardId ? 'card ' + c.cardId : '', c.source !== 'card' ? srcLabel(c.source) : ''].filter(Boolean).join(' · '))}</div>
+      ${companyOf(c) ? `<div style="margin-top:2px">${esc(companyOf(c).text)}${companyOf(c).guess ? ' <span class="muted small">(from email)</span>' : ''}</div>` : ''}
+      <div class="muted small">${esc([eventsOf(c).map(e => e.name).join(', '), new Date(c.time).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), c.cardId ? 'card ' + c.cardId : '', c.source !== 'card' ? srcLabel(c.source) : ''].filter(Boolean).join(' · '))}</div>
       ${phone || email ? `<div class="small" style="margin-top:8px">${esc([phone, email].filter(Boolean).join(' · '))}</div>` : ''}
       ${c.note ? `<div class="theirnote"><span class="muted small">Their note</span><br>${esc(clean(c.note))}</div>` : ''}
       <div class="actions">
@@ -406,6 +516,7 @@ function openContact(id) {
       </div>
     </div>`;
   $('addFields').hidden = true;
+  $('deletePanel').hidden = false;
   $('myNotes').value = form.myNotes;
   $('followDate').value = form.followUp;
   $('saveBtn').textContent = 'Save';
@@ -419,6 +530,7 @@ function openAdd() {
   $('dTitle').textContent = 'Add contact';
   $('dInfo').innerHTML = '';
   $('addFields').hidden = false;
+  $('deletePanel').hidden = true;
   ['aName', 'aPhone', 'aEmail', 'aCompany'].forEach(k => $(k).value = '');
   $('myNotes').value = ''; $('followDate').value = '';
   $('saveBtn').textContent = 'Add contact';
@@ -460,6 +572,90 @@ $('saveBtn').addEventListener('click', async () => {
 });
 
 /* ---------- settings & push ---------- */
+$('deleteBtn').addEventListener('click', async () => {
+  if (!current || current.isNew) return;
+  if (!confirm('Delete ' + clean(current.name) + '? This also removes the row from your sheet and cannot be undone.')) return;
+  const id = current.id;
+  contacts = contacts.filter(c => c.id !== id);
+  ls.set('ownerRecent', contacts);
+  enqueue({ action: 'deleteContact', data: { id } });
+  location.hash = '';
+  await flushQueue();
+  toast(queue().some(o => o.action === 'deleteContact' && o.data.id === id) ? 'Deleted on this phone. Will sync when online.' : 'Contact deleted');
+});
+
+/* ---------- export (CSV for Excel / Google Sheets / CRM import) ---------- */
+$('exportBtn').addEventListener('click', async () => {
+  const rows = visibleContacts();
+  if (!rows.length) return;
+  const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const head = ['Date', 'Time', 'Name', 'Company', 'Email', 'Phone', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source'];
+  const lines = [head].concat(rows.map(c => {
+    const d = new Date(c.time), tags = c.tags || [];
+    return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.email), clean(c.phone),
+      eventsOf(c).map(e => e.name).join(', '), tags.filter(t => TEMPS.includes(t)).join(', '), tags.filter(t => !TEMPS.includes(t)).join(', '),
+      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || '')];
+  })).map(r => r.map(cell).join(';'));
+  // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
+  const csv = '\ufeff' + lines.join('\r\n');
+  const ev = events.find(e => e.id === filter);
+  const label = ev ? ev.name : filter === 'followup' ? 'follow-up' : 'all';
+  const name = 'contacts-' + fold(label).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + todayStr() + '.csv';
+  const file = new File([csv], name, { type: 'text/csv' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Exported ' + rows.length + (rows.length === 1 ? ' contact' : ' contacts'));
+});
+
+/* ---------- events (settings) ---------- */
+let editingEvent = null;
+function renderEvents() {
+  const box = $('evList');
+  box.innerHTML = events.length ? '' : '<p class="small muted" style="margin:4px 0">No events yet.</p>';
+  events.forEach(e => {
+    const n = contacts.filter(c => eventsOf(c).some(x => x.id === e.id)).length;
+    const row = document.createElement('div'); row.className = 'evrow';
+    row.innerHTML = `<div class="info"><b>${esc(e.name)}</b><span class="count">${esc(fmtRange(e))} · ${n} contact${n === 1 ? '' : 's'}</span></div>`;
+    const ed = document.createElement('button'); ed.className = 'iconbtn'; ed.type = 'button'; ed.textContent = 'Edit';
+    ed.addEventListener('click', () => editEvent(e));
+    const del = document.createElement('button'); del.className = 'iconbtn danger'; del.type = 'button'; del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      if (!confirm('Delete the event "' + e.name + '"? The contacts stay.')) return;
+      try { await api('deleteEvent', { id: e.id }); events = events.filter(x => x.id !== e.id); ls.set('ownerEvents', events); renderEvents(); toast('Event deleted'); }
+      catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+    });
+    row.append(ed, del); box.appendChild(row);
+  });
+}
+function editEvent(e) {
+  editingEvent = e || null;
+  $('evFormTitle').textContent = e ? 'Edit event' : 'New event';
+  $('evName').value = e ? e.name : '';
+  $('evStart').value = e ? e.start : '';
+  $('evEnd').value = e ? e.end : '';
+  $('evCancel').hidden = !e;
+  if (e) $('evName').focus();
+}
+$('evStart').addEventListener('change', () => { if (!$('evEnd').value || $('evEnd').value < $('evStart').value) $('evEnd').value = $('evStart').value; });
+$('evCancel').addEventListener('click', () => editEvent(null));
+$('evForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('evSave'); btn.disabled = true;
+  try {
+    const saved = await api('saveEvent', { id: editingEvent ? editingEvent.id : '', name: $('evName').value.trim(), start: $('evStart').value, end: $('evEnd').value });
+    events = events.filter(x => x.id !== saved.id).concat(saved).sort((x, y) => (y.start > x.start ? 1 : y.start < x.start ? -1 : 0));
+    ls.set('ownerEvents', events);
+    toast(editingEvent ? 'Event updated' : 'Event saved');
+    editEvent(null); renderEvents();
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+  btn.disabled = false;
+});
+
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const deviceName = () => (isIOS ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'Browser') + ' · ' + new Date().toLocaleDateString();
@@ -478,6 +674,7 @@ async function pushState() {
 
 async function openSettings() {
   show('vSettings');
+  renderEvents(); editEvent(null);
   $('installText').textContent = isStandalone
     ? 'Installed. You are using the app from your home screen.'
     : isIOS ? 'In Safari: tap Share, then "Add to Home Screen", and open the app from the new icon. On iPhone, notifications only work from the home screen app.'
@@ -561,9 +758,9 @@ $('loginForm').addEventListener('submit', async e => {
 
 function signOutLocal() {
   token = null;
-  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue');
+  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter');
   idbSet('token', null);
-  contacts = [];
+  contacts = []; events = []; filter = '';
   location.hash = '';
   show('vLogin');
 }
