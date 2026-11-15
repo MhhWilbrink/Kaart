@@ -102,13 +102,15 @@
 // Settings come from config.json next to this page (endpoint, defaultCardId). No code changes needed per customer.
 let ENDPOINT = null;
 let CARD_ID = "card-001";
+// Whose card: ?u=<card address> (set per person in the admin page). Without it: the company's default card.
+const USER = (new URLSearchParams(location.search).get("u") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 30);
 async function loadConfig() {
   const c = await (await fetch("config.json", { cache: "no-cache" })).json();
   ENDPOINT = c.endpoint;
   // Card ID per card or event: add ?c=event-name to the URL on the chip
   CARD_ID = (new URLSearchParams(location.search).get("c") || c.defaultCardId || "card-001").slice(0, 50);
 }
-const CACHE_KEY = "nfcCardProfile";
+const CACHE_KEY = "nfcCardProfile" + (USER ? ":" + USER : "");
 const ME_KEY = "nfcCardMe";        // scanner's own details, only if they tick "remember"
 const QUEUE_KEY = "nfcCardQueue";  // submissions waiting for a connection
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -319,7 +321,7 @@ form.addEventListener("submit", async e => {
   const item = {
     endpoint: ENDPOINT,
     payload: {
-      ...me, note: d.note.trim(), cardId: CARD_ID,
+      ...me, note: d.note.trim(), cardId: CARD_ID, u: USER,
       clientTimestamp: new Date().toISOString(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       userAgent: navigator.userAgent, consent: true
@@ -349,8 +351,16 @@ async function loadProfile() {
   if (cached) render(cached);                       // instant render, refreshed below
   try {
     await loadConfig();
-    const res = await fetch(ENDPOINT);
+    const url = new URL(ENDPOINT, location.href);
+    if (USER) url.searchParams.set("u", USER);
+    const res = await fetch(url.href);
     const data = await res.json();
+    if (data.error === "card_not_found") {
+      store.del(CACHE_KEY);
+      document.getElementById("owner").innerHTML = `<p class="center">This card is not active.</p>`;
+      document.querySelectorAll("section.card").forEach(s => { if (s.id !== "owner") s.hidden = true; });
+      return;
+    }
     if (!data.ok || !data.profile) throw new Error("bad response");
     render(data.profile);
     store.set(CACHE_KEY, data.profile);

@@ -100,13 +100,20 @@
   <!-- LOGIN -->
   <section id="vLogin" class="login" hidden>
     <h1 style="font-size:1.5rem">Card contacts</h1>
-    <p class="muted">Sign in with your card admin password.</p>
+    <p class="muted" id="loginIntro">Sign in with your email address and password.</p>
     <form id="loginForm" class="panel">
-      <label for="pw">Password</label>
+      <label for="loginId">Email</label>
+      <input type="email" id="loginId" autocomplete="username" autocapitalize="off" inputmode="email">
+      <div id="inviteRow" hidden>
+        <label for="inviteCode">Invitation code</label>
+        <input id="inviteCode" autocomplete="one-time-code" autocapitalize="characters">
+      </div>
+      <label for="pw" id="pwLabel">Password</label>
       <input type="password" id="pw" autocomplete="current-password" required>
       <div class="check"><input type="checkbox" id="remember" checked><label for="remember" style="margin:0;color:inherit">Keep me signed in on this device (90 days)</label></div>
-      <button class="btn" style="width:100%;margin-top:14px">Sign in</button>
+      <button class="btn" id="loginBtn" style="width:100%;margin-top:14px">Sign in</button>
       <div class="err" id="loginErr"></div>
+      <button class="linkbtn" type="button" id="inviteToggle" style="margin-top:6px">First time? Use your invitation code</button>
     </form>
   </section>
 
@@ -423,7 +430,7 @@ function visibleContacts() {
   const words = fold($('q').value).split(/\s+/).filter(Boolean);
   const today = todayStr();
   return contacts.filter(c => {
-    if (filter === 'followup' ? !(c.followUp && c.followUp <= today) : filter && !eventsOf(c).some(e => e.id === filter)) return false;
+    if (filter === 'mine' ? c.ownerName : filter === 'followup' ? !(c.followUp && c.followUp <= today) : filter && !eventsOf(c).some(e => e.id === filter)) return false;
     if (!words.length) return true;
     const co = companyOf(c);
     const hay = fold([clean(c.name), co ? co.text : '', clean(c.email)].join(' '));
@@ -432,12 +439,14 @@ function visibleContacts() {
 }
 
 function renderFilters() {
-  if (filter && filter !== 'followup' && !events.some(e => e.id === filter)) { filter = ''; ls.set('ownerFilter', ''); }
+  const shared = contacts.some(c => c.ownerName);
+  if (filter && filter !== 'followup' && !(filter === 'mine' && shared) && !events.some(e => e.id === filter)) { filter = ''; ls.set('ownerFilter', ''); }
   const box = $('filters'); box.innerHTML = '';
   const add = (label, val) => box.appendChild(chip(label, filter === val, '', () => {
     filter = filter === val && val ? '' : val; ls.set('ownerFilter', filter); renderList();
   }));
   add('All', '');
+  if (shared) add('Mine', 'mine');
   const due = contacts.filter(c => c.followUp && c.followUp <= todayStr()).length;
   if (due) add('Follow up (' + due + ')', 'followup');
   events.forEach(e => add(e.name, e.id));
@@ -462,8 +471,8 @@ function renderList() {
     b.className = 'item';
     const isNew = seenUpTo && c.time > seenUpTo && !c.myNotes && !(c.tags || []).length;
     const co = companyOf(c);
-    const evs = filter && filter !== 'followup' ? [] : eventsOf(c);
-    const meta = c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : '');
+    const evs = filter && filter !== 'followup' && filter !== 'mine' ? [] : eventsOf(c);
+    const meta = [c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : ''), c.ownerName ? 'collected by ' + c.ownerName : ''].filter(Boolean).join(' · ');
     const badges = evs.map(e => `<span class="badge event">${esc(e.name)}</span>`).join('') +
       (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(t)}</span>`).join('') +
       (c.followUp ? `<span class="badge ${c.followUp <= today ? 'due' : ''}">Follow up ${c.followUp <= today ? 'now' : c.followUp}</span>` : '') +
@@ -539,7 +548,7 @@ function openContact(id) {
   $('dInfo').innerHTML = `<div class="panel">
       <div style="font-weight:600;font-size:1.1rem">${esc(clean(c.name))}</div>
       ${companyOf(c) ? `<div style="margin-top:2px">${esc(companyOf(c).text)}${companyOf(c).guess ? ' <span class="muted small">(from email)</span>' : ''}</div>` : ''}
-      <div class="muted small">${esc([eventsOf(c).map(e => e.name).join(', '), new Date(c.time).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), c.cardId ? 'card ' + c.cardId : '', c.source !== 'card' ? srcLabel(c.source) : ''].filter(Boolean).join(' · '))}</div>
+      <div class="muted small">${esc([c.ownerName ? 'Collected by ' + c.ownerName : '', eventsOf(c).map(e => e.name).join(', '), new Date(c.time).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), c.cardId ? 'card ' + c.cardId : '', c.source !== 'card' ? srcLabel(c.source) : ''].filter(Boolean).join(' · '))}</div>
       ${phone || email ? `<div class="small" style="margin-top:8px">${esc([phone, email].filter(Boolean).join(' · '))}</div>` : ''}
       ${c.note ? `<div class="theirnote"><span class="muted small">Their note</span><br>${esc(clean(c.note))}</div>` : ''}
       <div class="actions">
@@ -731,17 +740,17 @@ $('exportBtn').addEventListener('click', async () => {
   const rows = visibleContacts();
   if (!rows.length) return;
   const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  const head = ['Date', 'Time', 'Name', 'Company', 'Email', 'Phone', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos'];
+  const head = ['Date', 'Time', 'Name', 'Company', 'Email', 'Phone', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by'];
   const lines = [head].concat(rows.map(c => {
     const d = new Date(c.time), tags = c.tags || [];
     return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.email), clean(c.phone),
       eventsOf(c).map(e => e.name).join(', '), tags.filter(t => TEMPS.includes(t)).join(', '), tags.filter(t => !TEMPS.includes(t)).join(', '),
-      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || ''];
+      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me'];
   })).map(r => r.map(cell).join(';'));
   // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
   const csv = '\ufeff' + lines.join('\r\n');
   const ev = events.find(e => e.id === filter);
-  const label = ev ? ev.name : filter === 'followup' ? 'follow-up' : 'all';
+  const label = ev ? ev.name : filter === 'followup' ? 'follow-up' : filter === 'mine' ? 'mine' : 'all';
   const name = 'contacts-' + fold(label).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + todayStr() + '.csv';
   const file = new File([csv], name, { type: 'text/csv' });
   try {
@@ -877,16 +886,32 @@ $('pushOff').addEventListener('click', async () => {
 });
 
 /* ---------- auth ---------- */
+let inviteMode = false;
+function setInviteMode(on) {
+  inviteMode = on;
+  $('inviteRow').hidden = !on;
+  $('pwLabel').textContent = on ? 'Choose a password (min. 10 characters)' : 'Password';
+  $('pw').autocomplete = on ? 'new-password' : 'current-password';
+  $('loginBtn').textContent = on ? 'Activate account' : 'Sign in';
+  $('inviteToggle').textContent = on ? 'I already have a password' : 'First time? Use your invitation code';
+  $('loginIntro').textContent = on ? 'Enter the email address and invitation code from your administrator, and choose a password.' : 'Sign in with your email address and password.';
+  $('loginErr').textContent = '';
+}
+$('inviteToggle').addEventListener('click', () => setInviteMode(!inviteMode));
+$('loginId').value = ls.get('ownerLogin', '');
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = e.submitter; btn.disabled = true; $('loginErr').textContent = '';
   try {
     const res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'login', password: $('pw').value, remember: $('remember').checked, deviceName: deviceName() }) });
+      body: JSON.stringify(Object.assign({ action: inviteMode ? 'acceptInvite' : 'login', login: $('loginId').value.trim(), password: $('pw').value,
+        remember: $('remember').checked, deviceName: deviceName() }, inviteMode ? { code: $('inviteCode').value.trim() } : {})) });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error);
     token = j.data.token;
     ls.set('ownerToken', token);
+    ls.set('ownerLogin', $('loginId').value.trim());
+    if (inviteMode) setInviteMode(false);
     await idbSet('token', token);
     await idbSet('endpoint', ENDPOINT);
     $('pw').value = '';

@@ -50,6 +50,21 @@
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
   th, td { text-align: left; padding: 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
   th { color: #6b7280; font-weight: 600; white-space: nowrap; }
+  select { width: 100%; padding: 9px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; font-size: .9rem; background: #fff; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: #6b7280; margin: -4px 0 14px; flex-wrap: wrap; }
+  .who select { width: auto; min-width: 220px; }
+  .tag { display: inline-block; font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: #f3f4f6; color: #374151; white-space: nowrap; }
+  .tag.admin { background: #e0e7ff; color: #3730a3; } .tag.off { background: #fee2e2; color: #991b1b; } .tag.pending { background: #fef3c7; color: #92400e; }
+  .codebox { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 14px; margin-top: 14px; font-size: .9rem; }
+  .codebox code { font-size: 1.3rem; letter-spacing: .12em; font-weight: 700; display: block; margin: 6px 0; }
+  .codebox textarea { font-size: .85rem; margin-top: 6px; }
+  .radio { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid #f3f4f6; cursor: pointer; font-size: .92rem; }
+  .radio:first-of-type { border-top: 0; }
+  .radio input { width: auto; margin-top: 3px; }
+  .radio small { display: block; color: #6b7280; }
+  td select { min-width: 120px; padding: 6px; }
+  .rowbtns { display: flex; gap: 4px; flex-wrap: wrap; }
+  .rowbtns button { font-size: .8rem; padding: 0 4px; }
   #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.show { opacity: 1; }
   #toast.error { background: #b91c1c; }
@@ -61,15 +76,35 @@
 <div id="loginView" class="wrap narrow">
   <h1>Card admin</h1>
   <form id="loginForm" class="panel">
-    <label for="pw">Password</label>
+    <label for="loginId">Email</label>
+    <input type="email" id="loginId" autocomplete="username" autocapitalize="off">
+    <label for="pw" style="margin-top:10px">Password</label>
     <input type="password" id="pw" autocomplete="current-password" required>
     <button class="primary" style="width:100%">Sign in</button>
     <p class="msg" id="loginMsg"></p>
+    <button class="link" type="button" id="toInvite">First time? Use your invitation code</button>
+  </form>
+  <form id="inviteForm" class="panel" hidden>
+    <h2>Activate your account</h2>
+    <p class="hint" style="margin:0 0 10px">Enter the email address and invitation code from your administrator, and choose a password.</p>
+    <label for="invLogin">Email</label>
+    <input type="email" id="invLogin" autocomplete="username" required>
+    <label for="invCode" style="margin-top:10px">Invitation code</label>
+    <input id="invCode" autocomplete="one-time-code" autocapitalize="characters" required>
+    <label for="invPw" style="margin-top:10px">Choose a password (min. 10 characters)</label>
+    <input type="password" id="invPw" autocomplete="new-password" minlength="10" required>
+    <button class="primary" style="width:100%">Activate and sign in</button>
+    <p class="msg" id="inviteMsg"></p>
+    <button class="link" type="button" id="toLogin">I already have a password</button>
   </form>
   <form id="setupForm" class="panel" hidden>
     <h2>First-time setup</h2>
     <p class="hint" style="margin:0 0 10px">Enter the setup code from the installation, then choose your admin password.<br>
       Google: in Apps Script, run <b>showSetupCode</b> and open the log.<br>Own server: the code is in the server log.</p>
+    <div class="grid" style="margin-bottom:10px">
+      <div><label for="setupFirst">Your first name</label><input id="setupFirst" autocomplete="given-name" required></div>
+      <div><label for="setupEmail">Your email (used to sign in)</label><input type="email" id="setupEmail" autocomplete="email" required></div>
+    </div>
     <label for="setupCode">Setup code</label>
     <input id="setupCode" autocomplete="off" autocapitalize="characters" required>
     <label for="setupPw" style="margin-top:10px">New admin password (min. 10 characters)</label>
@@ -90,10 +125,17 @@
     </div>
   </header>
 
+  <div class="who" id="whoRow">
+    <span id="whoText"></span>
+    <label for="editUser" style="margin:0" hidden id="editUserLabel">Editing the card of</label>
+    <select id="editUser" hidden></select>
+  </div>
+
   <nav>
     <button data-tab="profile" class="active">Profile</button>
-    <button data-tab="branding">Branding</button>
+    <button data-tab="branding" data-admin>Branding</button>
     <button data-tab="contacts">Contacts</button>
+    <button data-tab="team" data-admin>Team</button>
     <button data-tab="account">Sharing &amp; account</button>
   </nav>
 
@@ -122,8 +164,21 @@
     <div class="split">
       <div>
         <div class="panel">
+          <h2>Department</h2>
+          <p class="hint" style="margin:-6px 0 10px">Each department has its own logo, backgrounds and colours. Everyone in that department gets this look.</p>
+          <div class="grid">
+            <div><label for="deptSel">Department</label><select id="deptSel"></select></div>
+            <div><label for="deptName">Name</label><input id="deptName" maxlength="60"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="primary" type="button" id="deptRename">Save name</button>
+            <button class="ghost" type="button" id="deptNew" style="margin-top:16px">+ New department</button>
+            <button class="ghost" type="button" id="deptDelete" style="margin-top:16px">Delete department</button>
+          </div>
+          <p class="hint" id="deptPeople"></p>
+        </div>
+        <div class="panel">
           <h2>Images</h2>
-          <p class="hint" style="margin:-6px 0 14px">Company branding: logo, backgrounds and colours.</p>
           <div class="imgrow">
             <div class="thumb" id="logoThumb"></div>
             <div>
@@ -199,20 +254,56 @@
     </div>
   </section>
 
-  <!-- Privacy & account -->
-  <section id="tab-account" hidden>
-    <form id="privacyForm" class="panel">
-      <h2>Privacy &amp; notifications</h2>
+  <!-- Team -->
+  <section id="tab-team" hidden>
+    <div class="panel">
+      <div class="bar"><span id="teamCount"></span></div>
+      <div class="tablewrap"><table id="teamTable"></table></div>
+      <div id="teamCode"></div>
+    </div>
+    <form id="inviteUserForm" class="panel">
+      <h2>Add a person</h2>
+      <div class="grid">
+        <div><label for="iu-first">First name *</label><input id="iu-first" required maxlength="60"></div>
+        <div><label for="iu-last">Last name</label><input id="iu-last" maxlength="60"></div>
+        <div><label for="iu-email">Email (used to sign in) *</label><input id="iu-email" type="email" required maxlength="150"></div>
+        <div><label for="iu-title">Job title</label><input id="iu-title" maxlength="120"></div>
+        <div><label for="iu-dept">Department</label><select id="iu-dept"></select></div>
+        <div><label for="iu-role">Role</label><select id="iu-role"><option value="member">Card holder</option><option value="admin">Administrator</option></select></div>
+      </div>
+      <button class="primary">Add and create invitation</button>
+      <p class="hint">You get a one-time code (valid 14 days). The person uses it to choose their own password.</p>
+    </form>
+    <form id="companyForm" class="panel">
+      <h2>Who sees which contacts</h2>
+      <label class="radio"><input type="radio" name="visibility" value="own+admin"><span><b>Own contacts, administrators see all</b><small>Card holders see only the people they met. Administrators see and export everything.</small></span></label>
+      <label class="radio"><input type="radio" name="visibility" value="own"><span><b>Own contacts only</b><small>Everyone, administrators included, sees only their own contacts.</small></span></label>
+      <label class="radio"><input type="radio" name="visibility" value="all"><span><b>Shared address book</b><small>Everyone sees and can add notes to all contacts of the team.</small></span></label>
+      <h2 style="margin-top:22px">Company settings</h2>
       <div class="grid">
         <div class="full">
-          <label for="f-consentText">Consent text shown to people who scan your card</label>
+          <label for="f-consentText">Consent text shown to people who scan a card</label>
           <textarea id="f-consentText" rows="3" maxlength="400"></textarea>
-          <p class="hint">Use {firstName} to insert your first name.</p>
+          <p class="hint">Use {firstName} to insert the card holder's first name.</p>
         </div>
         <div class="full">
           <label for="f-privacyUrl">Privacy statement URL (optional)</label>
           <input id="f-privacyUrl" type="url" placeholder="https://…" maxlength="300">
         </div>
+        <div class="full">
+          <label for="f-defaultUser">Card shown without a card address (for chips written before version 2.4)</label>
+          <select id="f-defaultUser"></select>
+        </div>
+      </div>
+      <button class="primary">Save</button>
+    </form>
+  </section>
+
+  <!-- Privacy & account -->
+  <section id="tab-account" hidden>
+    <form id="privacyForm" class="panel">
+      <h2>Notifications</h2>
+      <div class="grid">
         <div class="full">
           <label for="f-notifyEmail">Email me when someone shares their details (optional)</label>
           <input id="f-notifyEmail" type="email" maxlength="150">
@@ -226,12 +317,12 @@
       <button class="primary">Save</button>
     </form>
     <div class="panel">
-      <h2>Owner app</h2>
+      <h2>Your owner app</h2>
       <p class="hint" id="deviceInfo" style="margin-bottom:8px"></p>
       <button class="ghost" type="button" id="revokeDevices">Sign out all devices and stop notifications</button>
     </div>
     <form id="passwordForm" class="panel">
-      <h2>Change password</h2>
+      <h2>Change your password</h2>
       <div class="grid">
         <div><label for="pwCurrent">Current password</label><input type="password" id="pwCurrent" autocomplete="current-password" required></div>
         <div><label for="pwNew">New password (min. 10 characters)</label><input type="password" id="pwNew" autocomplete="new-password" minlength="10" required></div>
@@ -255,12 +346,17 @@ const PROFILE_FIELDS = [
 const DEFAULT_THEME = { primary: '#0a3d62', background: '#f4f6f8', card: '#ffffff', text: '#1c1c1c', buttonText: '#ffffff', cardOverlay: 85, pageOverlay: 30 };
 // kind: [max size in px, keep PNG, label]
 const IMAGE_KINDS = { photo: [600, false, 'Photo'], logo: [800, true, 'Logo'], cardBg: [1200, false, 'Card background'], pageBg: [1600, false, 'Page background'] };
+const BRAND_KINDS = ['logo', 'cardBg', 'pageBg'];
 
 let token = null;
-let state = { profile: null, photoUrl: '', logoUrl: '' };
+let state = null;            // adminData of the card being edited
+let editUserId = '';         // '' = yourself
+let deptId = '';             // department shown in the Branding tab
 let contacts = { headers: [], rows: [] };
 
 const $ = id => document.getElementById(id);
+const isAdmin = () => state && state.me.role === 'admin';
+const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /* ---------- server calls (same HTTP API on every platform) ---------- */
 let ENDPOINT = null;
@@ -270,6 +366,7 @@ async function loadConfig() {
 }
 // Images from the own-server version come back as /files/…: make them absolute against the backend.
 const abs = u => (u ? new URL(u, ENDPOINT).href : '');
+const cardUrl = slug => new URL('../' + (slug ? '?u=' + encodeURIComponent(slug) : ''), location.href).href;
 
 async function postApi(action, data) {
   const res = await fetch(ENDPOINT, {
@@ -284,33 +381,12 @@ async function postApi(action, data) {
   return j.data;
 }
 
-// Maps the admin's operations onto API actions (the first argument of most is the token, which postApi adds itself).
-const OPS = {
-  login: ([pw]) => ['login', { password: pw }],
-  logout: () => ['logout'],
-  getAdminData: () => ['adminData'],
-  saveProfile: ([, patch]) => ['saveProfile', { patch }],
-  uploadImage: ([, kind, dataUrl]) => ['uploadImage', { kind, dataUrl }],
-  removeImage: ([, kind]) => ['removeImage', { kind }],
-  getContacts: () => ['contacts'],
-  deleteContact: ([, id]) => ['deleteContact', { id }],
-  changePassword: ([, current, next]) => ['changePassword', { current, next }],
-  revokeAllDevices: () => ['revokeDevices']
-};
-async function call(fn, ...args) {
-  const [action, data] = OPS[fn](args);
-  const out = await postApi(action, data);
-  if (fn === 'uploadImage') return abs(out);
-  if (fn === 'getAdminData') ['photo', 'logo', 'cardBg', 'pageBg'].forEach(k => out[k + 'Url'] = abs(out[k + 'Url']));
-  return fn === 'login' ? out.token : out;
-}
-
 function toast(text, isError) {
   const t = $('toast');
   t.textContent = text;
   t.className = 'show' + (isError ? ' error' : '');
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.className = '', 3000);
+  t._h = setTimeout(() => t.className = '', 3200);
 }
 
 async function withBusy(btn, fn) {
@@ -322,58 +398,112 @@ async function withBusy(btn, fn) {
 function saveToken(t) { token = t; try { sessionStorage.setItem('cardAdminToken', t || ''); } catch (e) {} }
 function loadToken() { try { return sessionStorage.getItem('cardAdminToken') || null; } catch (e) { return null; } }
 
+function showLogin(which) {
+  ['loginForm', 'inviteForm', 'setupForm'].forEach(f => $(f).hidden = f !== which);
+}
 function signOutLocal() {
   saveToken(null);
+  state = null; editUserId = '';
   $('appView').hidden = true;
   $('loginView').hidden = false;
-  $('loginForm').hidden = false;
-  $('setupForm').hidden = true;
+  showLogin('loginForm');
+}
+$('toInvite').addEventListener('click', () => { $('invLogin').value = $('loginId').value; showLogin('inviteForm'); });
+$('toLogin').addEventListener('click', () => showLogin('loginForm'));
+try { $('loginId').value = localStorage.getItem('cardAdminLogin') || ''; } catch (e) {}
+
+async function signIn(action, data, msgEl, btn) {
+  btn.disabled = true;
+  msgEl.textContent = '';
+  try {
+    const out = await postApi(action, data);
+    saveToken(out.token);
+    try { localStorage.setItem('cardAdminLogin', data.login || ''); } catch (e) {}
+    await openApp();
+    return true;
+  } catch (err) {
+    msgEl.textContent = err.message;
+    return false;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const btn = e.submitter;
-  btn.disabled = true;
-  $('loginMsg').textContent = '';
-  try {
-    saveToken(await call('login', $('pw').value));
-    $('pw').value = '';
-    await openApp();
-  } catch (err) {
-    $('loginMsg').textContent = err.message;
-  } finally {
-    btn.disabled = false;
+  if (await signIn('login', { login: $('loginId').value.trim(), password: $('pw').value }, $('loginMsg'), e.submitter)) $('pw').value = '';
+});
+
+$('inviteForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = { login: $('invLogin').value.trim(), code: $('invCode').value.trim(), password: $('invPw').value };
+  if (await signIn('acceptInvite', data, $('inviteMsg'), e.submitter)) {
+    $('invCode').value = $('invPw').value = '';
+    $('loginId').value = data.login;
+    toast('Welcome! Check your details below.');
   }
 });
 
 $('logoutBtn').addEventListener('click', async () => {
-  try { await call('logout', token); } catch (e) {}
+  try { await postApi('logout'); } catch (e) {}
   signOutLocal();
 });
 
-async function openApp() {
-  const data = await call('getAdminData', token);
+async function load(userId) {
+  const data = await postApi('adminData', userId ? { userId } : {});
+  ['photoUrl'].forEach(k => data[k] = abs(data[k]));
+  const fixDept = d => { BRAND_KINDS.forEach(k => d[k + 'Url'] = abs(d[k + 'Url'])); return d; };
+  fixDept(data.dept);
+  (data.depts || []).forEach(fixDept);
+  (data.users || []).forEach(u => u.photoUrl = abs(u.photoUrl));
   state = data;
+  editUserId = data.target.id === data.me.id ? '' : data.target.id;
+  if (!deptId || !(data.depts || []).some(d => d.id === deptId)) deptId = data.dept.id;
+  return data;
+}
+
+async function openApp(userId) {
+  await load(userId);
   $('loginView').hidden = true;
   $('appView').hidden = false;
-  $('cardLink').href = '../';
-  $('versionInfo').textContent = 'Version ' + (data.version || '');
+  $('versionInfo').textContent = 'Version ' + (state.version || '');
+  document.querySelectorAll('nav [data-admin]').forEach(b => b.hidden = !isAdmin());
+  const active = document.querySelector('nav button.active');
+  if (active && active.hidden) document.querySelector('nav [data-tab=profile]').click();
+  renderWho();
   fillProfileForm();
-  fillThemeForm();
   fillPrivacyForm();
-  $('deviceInfo').textContent = `Signed-in app devices: ${data.devices || 0} · receiving notifications: ${data.pushDevices || 0}`;
+  renderDeptPicker();
+  fillThemeForm();
   renderImages();
+  if (isAdmin()) { renderTeam(); fillCompanyForm(); }
+  $('deviceInfo').textContent = `Signed-in app devices: ${state.devices || 0} · receiving notifications: ${state.pushDevices || 0}`;
   updatePreview();
 }
+
+function renderWho() {
+  const t = state.target, me = state.me;
+  $('cardLink').href = cardUrl(t.slug);
+  $('editUser').hidden = $('editUserLabel').hidden = !isAdmin() || (state.users || []).length < 2;
+  $('whoText').textContent = isAdmin() && (state.users || []).length > 1 ? '' : 'Signed in as ' + (me.name || me.login) + (isAdmin() ? ' (administrator)' : '');
+  if (isAdmin()) {
+    $('editUser').innerHTML = state.users.map(u => `<option value="${escH(u.id)}"${u.id === t.id ? ' selected' : ''}>${escH(u.name)}${u.id === me.id ? ' (you)' : ''}</option>`).join('');
+  }
+}
+$('editUser').addEventListener('change', e => withBusy(e.target, async () => {
+  await openApp(e.target.value === state.me.id ? '' : e.target.value);
+  toast('Now editing the card of ' + state.target.name);
+}));
 
 /* ---------- tabs ---------- */
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
   document.querySelectorAll('section[id^=tab-]').forEach(s => s.hidden = s.id !== 'tab-' + b.dataset.tab);
   if (b.dataset.tab === 'contacts') loadContacts();
+  if (b.dataset.tab === 'team') withBusy(null, async () => { await load(editUserId); renderTeam(); fillCompanyForm(); });
 }));
 
-/* ---------- profile ---------- */
+/* ---------- profile (yours, or the person selected by an administrator) ---------- */
 (function buildProfileFields() {
   const wrap = $('profileFields');
   PROFILE_FIELDS.forEach(([key, label, type]) => {
@@ -395,19 +525,20 @@ document.querySelectorAll('nav button').forEach(b => b.addEventListener('click',
 function fillProfileForm() {
   PROFILE_FIELDS.forEach(([key]) => $('f-' + key).value = state.profile[key] || '');
 }
+const forTarget = data => Object.assign(editUserId ? { userId: editUserId } : {}, data);
 
 $('profileForm').addEventListener('submit', e => {
   e.preventDefault();
   withBusy(e.submitter, async () => {
     const patch = {};
     PROFILE_FIELDS.forEach(([key]) => patch[key] = $('f-' + key).value);
-    state.profile = await call('saveProfile', token, patch);
+    state.profile = await postApi('saveProfile', forTarget({ patch }));
     toast('Details saved');
   });
 });
 
-/* ---------- privacy ---------- */
-const PRIVACY_TEXT = ['consentText', 'privacyUrl', 'notifyEmail'];
+/* ---------- sharing & account ---------- */
+const PRIVACY_TEXT = ['notifyEmail'];
 const PRIVACY_BOOL = ['shareWhatsapp', 'shareEmail'];
 function fillPrivacyForm() {
   PRIVACY_TEXT.forEach(k => $('f-' + k).value = state.profile[k] || '');
@@ -420,7 +551,7 @@ $('privacyForm').addEventListener('submit', e => {
     const patch = {};
     PRIVACY_TEXT.forEach(k => patch[k] = $('f-' + k).value);
     PRIVACY_BOOL.forEach(k => patch[k] = $('f-' + k).checked);
-    state.profile = await call('saveProfile', token, patch);
+    state.profile = await postApi('saveProfile', forTarget({ patch }));
     toast('Saved');
   });
 });
@@ -428,31 +559,66 @@ $('privacyForm').addEventListener('submit', e => {
 $('passwordForm').addEventListener('submit', e => {
   e.preventDefault();
   withBusy(e.submitter, async () => {
-    await call('changePassword', token, $('pwCurrent').value, $('pwNew').value);
+    await postApi('changePassword', { current: $('pwCurrent').value, next: $('pwNew').value });
     $('pwCurrent').value = ''; $('pwNew').value = '';
     toast('Password changed');
   });
 });
 
 $('revokeDevices').addEventListener('click', e => {
-  if (!confirm('Sign out all owner-app devices and stop their notifications?')) return;
+  if (!confirm('Sign out all your owner-app devices and stop their notifications?')) return;
   withBusy(e.target, async () => {
-    await call('revokeAllDevices', token);
+    await postApi('revokeDevices');
     $('deviceInfo').textContent = 'Signed-in app devices: 0 · receiving notifications: 0';
     toast('All devices signed out');
   });
 });
 
-/* ---------- branding ---------- */
+/* ---------- branding (per department, administrators) ---------- */
+const brandDept = () => (state.depts || []).find(d => d.id === deptId) || state.dept;
 const colorInputs = () => document.querySelectorAll('#themeForm input[type=color]');
 
+function renderDeptPicker() {
+  if (!isAdmin()) return;
+  $('deptSel').innerHTML = state.depts.map(d => `<option value="${escH(d.id)}"${d.id === deptId ? ' selected' : ''}>${escH(d.name)}</option>`).join('');
+  $('deptName').value = brandDept().name;
+  const people = state.users.filter(u => u.dept === deptId).map(u => u.name);
+  $('deptPeople').textContent = people.length ? 'People in this department: ' + people.join(', ') : 'Nobody is in this department yet. Assign people in the Team tab.';
+  $('deptDelete').hidden = state.depts.length < 2;
+}
+$('deptSel').addEventListener('change', e => { deptId = e.target.value; renderDeptPicker(); fillThemeForm(); renderImages(); });
+$('deptRename').addEventListener('click', e => withBusy(e.target, async () => {
+  await postApi('saveDept', { deptId, name: $('deptName').value });
+  await load(editUserId); renderDeptPicker(); toast('Name saved');
+}));
+$('deptNew').addEventListener('click', e => {
+  const name = prompt('Name of the new department (it starts with a copy of the current colours):');
+  if (!name) return;
+  withBusy(e.target, async () => {
+    const d = await postApi('saveDept', { name, copyFrom: deptId });
+    deptId = d.id;
+    await load(editUserId); renderDeptPicker(); fillThemeForm(); renderImages(); renderTeam();
+    toast('Department created');
+  });
+});
+$('deptDelete').addEventListener('click', e => {
+  if (!confirm('Delete the department "' + brandDept().name + '" and its images?')) return;
+  withBusy(e.target, async () => {
+    await postApi('deleteDept', { deptId });
+    deptId = '';
+    await load(editUserId); renderDeptPicker(); fillThemeForm(); renderImages(); renderTeam();
+    toast('Department deleted');
+  });
+});
+
 function fillThemeForm(theme) {
-  theme = theme || state.profile.theme;
+  theme = theme || brandDept().theme;
   colorInputs().forEach(i => i.value = theme[i.dataset.key]);
   $('cardOverlay').value = theme.cardOverlay ?? DEFAULT_THEME.cardOverlay;
   $('overlayVal').textContent = $('cardOverlay').value;
   $('pageOverlay').value = theme.pageOverlay ?? DEFAULT_THEME.pageOverlay;
   $('pageOverlayVal').textContent = $('pageOverlay').value;
+  updatePreview();
 }
 
 function currentTheme() {
@@ -466,25 +632,27 @@ function currentTheme() {
 colorInputs().forEach(i => i.addEventListener('input', updatePreview));
 $('cardOverlay').addEventListener('input', () => { $('overlayVal').textContent = $('cardOverlay').value; updatePreview(); });
 $('pageOverlay').addEventListener('input', () => { $('pageOverlayVal').textContent = $('pageOverlay').value; updatePreview(); });
-
-$('resetTheme').addEventListener('click', () => { fillThemeForm(DEFAULT_THEME); updatePreview(); });
+$('resetTheme').addEventListener('click', () => fillThemeForm(DEFAULT_THEME));
 
 $('themeForm').addEventListener('submit', e => {
   e.preventDefault();
   withBusy(e.submitter, async () => {
-    state.profile = await call('saveProfile', token, { theme: currentTheme() });
-    toast('Colours saved');
+    await postApi('saveDept', { deptId, theme: currentTheme() });
+    await load(editUserId);
+    toast('Colours saved for ' + brandDept().name);
   });
 });
 
+function imageUrlOf(kind) { return kind === 'photo' ? state.photoUrl : brandDept()[kind + 'Url']; }
+
 function renderImages() {
   Object.keys(IMAGE_KINDS).forEach(kind => {
-    const url = state[kind + 'Url'];
+    const url = imageUrlOf(kind);
     $(kind + 'Thumb').style.backgroundImage = url ? `url("${url}")` : 'none';
     $(kind + 'Remove').hidden = !url;
   });
-  $('overlayRow').hidden = !state.cardBgUrl;
-  $('pageOverlayRow').hidden = !state.pageBgUrl;
+  $('overlayRow').hidden = !imageUrlOf('cardBg');
+  $('pageOverlayRow').hidden = !imageUrlOf('pageBg');
   updatePreview();
 }
 
@@ -505,6 +673,7 @@ function resizeImage(file, maxSize, asPng) {
   });
 }
 
+const imageTarget = kind => (kind === 'photo' ? forTarget({}) : { deptId });
 Object.keys(IMAGE_KINDS).forEach(kind => {
   $(kind + 'Input').addEventListener('change', e => {
     const file = e.target.files[0];
@@ -512,15 +681,16 @@ Object.keys(IMAGE_KINDS).forEach(kind => {
     withBusy(e.target, async () => {
       const [maxSize, asPng, label] = IMAGE_KINDS[kind];
       const dataUrl = await resizeImage(file, maxSize, asPng);
-      state[kind + 'Url'] = await call('uploadImage', token, kind, dataUrl);
+      await postApi('uploadImage', Object.assign({ kind, dataUrl }, imageTarget(kind)));
+      await load(editUserId);
       renderImages();
       toast(label + ' uploaded');
     });
     e.target.value = '';
   });
   $(kind + 'Remove').addEventListener('click', e => withBusy(e.target, async () => {
-    await call('removeImage', token, kind);
-    state[kind + 'Url'] = '';
+    await postApi('removeImage', Object.assign({ kind }, imageTarget(kind)));
+    await load(editUserId);
     renderImages();
     toast('Removed');
   }));
@@ -536,30 +706,30 @@ function contrast(a, b) {
   const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (l1 + 0.05) / (l2 + 0.05);
 }
-
 function hexToRgba(hex, a) {
   const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16));
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
 function updatePreview() {
-  if (!state.profile) return;
+  if (!state) return;
   const t = currentTheme();
+  const cardBg = imageUrlOf('cardBg'), pageBg = imageUrlOf('pageBg'), logo = imageUrlOf('logo');
   const p = $('preview').style;
   p.setProperty('--primary', t.primary);
   p.setProperty('--btnText', t.buttonText);
   p.setProperty('--bg', t.background);
   p.setProperty('--card', t.card);
   p.setProperty('--text', t.text);
-  p.setProperty('--overlay', hexToRgba(t.card, state.cardBgUrl ? t.cardOverlay / 100 : 1));
-  p.setProperty('--cardImg', state.cardBgUrl ? `url("${state.cardBgUrl}")` : 'none');
-  p.setProperty('--pageOverlay', hexToRgba(t.background, state.pageBgUrl ? t.pageOverlay / 100 : 0));
-  p.setProperty('--pageImg', state.pageBgUrl ? `url("${state.pageBgUrl}")` : 'none');
+  p.setProperty('--overlay', hexToRgba(t.card, cardBg ? t.cardOverlay / 100 : 1));
+  p.setProperty('--cardImg', cardBg ? `url("${cardBg}")` : 'none');
+  p.setProperty('--pageOverlay', hexToRgba(t.background, pageBg ? t.pageOverlay / 100 : 0));
+  p.setProperty('--pageImg', pageBg ? `url("${pageBg}")` : 'none');
 
   const val = k => ($('f-' + k) ? $('f-' + k).value : state.profile[k]) || '';
   $('pName').textContent = [val('firstName'), val('lastName')].filter(Boolean).join(' ') || 'Your name';
   $('pRole').textContent = [val('title'), val('company')].filter(Boolean).join(' · ');
-  [['pPhoto', state.photoUrl], ['pLogo', state.logoUrl]].forEach(([id, url]) => {
+  [['pPhoto', state.photoUrl], ['pLogo', logo]].forEach(([id, url]) => {
     $(id).hidden = !url;
     if (url) $(id).src = url;
   });
@@ -567,19 +737,113 @@ function updatePreview() {
   const issues = [];
   if (contrast(t.primary, t.buttonText) < 4.5) issues.push('button text vs. button colour');
   if (contrast(t.text, t.card) < 4.5) issues.push('text vs. card background');
-  if (state.cardBgUrl && t.cardOverlay < 70) issues.push('card image overlay below 70%');
+  if (cardBg && t.cardOverlay < 70) issues.push('card image overlay below 70%');
   $('contrastWarn').innerHTML = issues.length
     ? `<div class="warn">Low contrast (${issues.join(', ')}). This may be hard to read, especially outdoors or at events.</div>`
     : '';
 }
 
+/* ---------- team (administrators) ---------- */
+function deptOptions(sel) { return state.depts.map(d => `<option value="${escH(d.id)}"${d.id === sel ? ' selected' : ''}>${escH(d.name)}</option>`).join(''); }
+
+function renderTeam() {
+  if (!isAdmin()) return;
+  const users = state.users;
+  $('teamCount').textContent = users.length + (users.length === 1 ? ' person' : ' people');
+  $('iu-dept').innerHTML = deptOptions(state.dept.id);
+  const t = $('teamTable');
+  t.innerHTML = '<tr><th>Name</th><th>Sign-in email</th><th>Card address</th><th>Department</th><th>Role</th><th>Contacts</th><th></th></tr>';
+  users.forEach(u => {
+    const tr = t.insertRow();
+    const isMe = u.id === state.me.id;
+    const status = !u.active ? '<span class="tag off">Switched off</span>' : u.invitePending ? '<span class="tag pending">Invitation open</span>' : '';
+    tr.innerHTML = `<td><b>${escH(u.name)}</b>${isMe ? ' <span class="tag">you</span>' : ''} ${status}</td>
+      <td>${escH(u.login)}</td>
+      <td><a href="${escH(cardUrl(u.slug))}" target="_blank" rel="noopener">?u=${escH(u.slug)}</a></td>
+      <td><select data-f="dept">${deptOptions(u.dept)}</select></td>
+      <td><select data-f="role"><option value="member"${u.role === 'member' ? ' selected' : ''}>Card holder</option><option value="admin"${u.role === 'admin' ? ' selected' : ''}>Administrator</option></select></td>
+      <td>${u.contacts}</td>
+      <td class="rowbtns"></td>`;
+    tr.querySelectorAll('select').forEach(sel => sel.addEventListener('change', () => withBusy(sel, async () => {
+      try { await postApi('updateUser', { userId: u.id, [sel.dataset.f]: sel.value }); toast('Saved'); }
+      finally { await load(editUserId); renderTeam(); renderDeptPicker(); }
+    })));
+    const btns = tr.querySelector('.rowbtns');
+    const add = (label, fn, title) => { const b = document.createElement('button'); b.className = 'link'; b.type = 'button'; b.textContent = label; if (title) b.title = title; b.addEventListener('click', () => fn(b)); btns.append(b); };
+    add('Edit card', () => { $('editUser').value = u.id; $('editUser').dispatchEvent(new Event('change')); document.querySelector('nav [data-tab=profile]').click(); });
+    add('Card address', b => {
+      const slug = prompt('Card address for ' + u.name + ' (letters, numbers and dashes). Chips written with the old address stop working.', u.slug);
+      if (slug && slug !== u.slug) withBusy(b, async () => { await postApi('updateUser', { userId: u.id, slug }); await load(editUserId); renderTeam(); toast('Card address changed'); });
+    });
+    add('Sign-in email', b => {
+      const email = prompt('Sign-in email for ' + u.name, u.login);
+      if (email && email !== u.login) withBusy(b, async () => { await postApi('updateUser', { userId: u.id, email }); await load(editUserId); renderTeam(); toast('Saved'); });
+    });
+    if (!isMe) {
+      add('New code', b => {
+        if (!confirm('Create a new invitation code for ' + u.name + '? Their current password stops working and their devices are signed out.')) return;
+        withBusy(b, async () => { const r = await postApi('resetInvite', { userId: u.id }); await load(editUserId); renderTeam(); showCode(u.name, u.login, r.code); });
+      }, 'For a forgotten password, or to resend the invitation');
+      add(u.active ? 'Switch off' : 'Switch on', b => withBusy(b, async () => {
+        await postApi('updateUser', { userId: u.id, active: !u.active }); await load(editUserId); renderTeam();
+        toast(u.active ? u.name + ' is switched off: their card and app no longer work' : u.name + ' is switched on again');
+      }));
+      add('Delete', b => {
+        if (!confirm('Delete ' + u.name + '? Their ' + u.contacts + ' contact(s) move to you. This cannot be undone.')) return;
+        withBusy(b, async () => { await postApi('deleteUser', { userId: u.id }); await openApp(''); document.querySelector('nav [data-tab=team]').click(); toast(u.name + ' deleted'); });
+      });
+    }
+  });
+}
+
+function showCode(name, login, code) {
+  const app = new URL('../app/', location.href).href, admin = location.href.split('#')[0];
+  const msg = `Hi ${name.split(' ')[0]},\n\nYour digital business card is ready.\n\n1. Open ${admin}\n2. Choose "First time? Use your invitation code"\n3. Email: ${login}\n   Code: ${code}\n   (valid for 14 days)\n4. Choose your own password and check your details.\n\nFor notifications on your phone, open ${app} and sign in.`;
+  $('teamCode').innerHTML = `<div class="codebox"><b>Invitation code for ${escH(name)}</b><code>${escH(code)}</code>
+    This code is shown only once. Send it to ${escH(login)}, for example with this message:
+    <textarea rows="9" readonly id="codeMsg"></textarea>
+    <button class="ghost" type="button" id="copyMsg" style="margin-top:8px">Copy message</button></div>`;
+  $('codeMsg').value = msg;
+  $('copyMsg').addEventListener('click', async () => { try { await navigator.clipboard.writeText(msg); toast('Copied'); } catch (e) { $('codeMsg').select(); } });
+  $('teamCode').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+$('inviteUserForm').addEventListener('submit', e => {
+  e.preventDefault();
+  withBusy(e.submitter, async () => {
+    const r = await postApi('inviteUser', { firstName: $('iu-first').value, lastName: $('iu-last').value, email: $('iu-email').value,
+      title: $('iu-title').value, dept: $('iu-dept').value, role: $('iu-role').value });
+    ['iu-first', 'iu-last', 'iu-email', 'iu-title'].forEach(k => $(k).value = '');
+    await load(editUserId); renderTeam(); renderWho();
+    showCode(r.user.name, r.user.login, r.code);
+  });
+});
+
+function fillCompanyForm() {
+  const c = state.company;
+  document.querySelectorAll('input[name=visibility]').forEach(r => r.checked = r.value === c.visibility);
+  $('f-consentText').value = c.consentText || '';
+  $('f-privacyUrl').value = c.privacyUrl || '';
+  $('f-defaultUser').innerHTML = state.users.filter(u => u.active).map(u => `<option value="${escH(u.id)}"${u.id === state.defaultUser ? ' selected' : ''}>${escH(u.name)}</option>`).join('');
+}
+
+$('companyForm').addEventListener('submit', e => {
+  e.preventDefault();
+  withBusy(e.submitter, async () => {
+    const v = document.querySelector('input[name=visibility]:checked');
+    await postApi('saveCompany', { visibility: v ? v.value : undefined, consentText: $('f-consentText').value, privacyUrl: $('f-privacyUrl').value, defaultUser: $('f-defaultUser').value });
+    await load(editUserId);
+    toast('Saved');
+  });
+});
+
 /* ---------- contacts ---------- */
-const SHOW_COLS = ['Timestamp (server)', 'Name', 'Email', 'Phone', 'Company', 'Note', 'My notes', 'Tags', 'Follow-up', 'Card ID'];
+const SHOW_COLS = ['Timestamp (server)', 'Name', 'Email', 'Phone', 'Company', 'Note', 'My notes', 'Tags', 'Follow-up', 'Card ID', 'Owner'];
 
 async function loadContacts() {
   $('contactCount').textContent = 'Loading…';
   try {
-    contacts = await call('getContacts', token);
+    contacts = await postApi('contacts');
     renderContacts();
   } catch (e) {
     $('contactCount').textContent = '';
@@ -588,7 +852,9 @@ async function loadContacts() {
 }
 
 function renderContacts() {
-  const idx = SHOW_COLS.map(c => contacts.headers.indexOf(c));
+  const shared = state && (state.me.role === 'admin' ? state.company.visibility !== 'own' : state.company.visibility === 'all');
+  const cols = SHOW_COLS.filter(c => c !== 'Owner' || shared);
+  const idx = cols.map(c => contacts.headers.indexOf(c));
   const idIdx = contacts.headers.indexOf('ID');
   const table = $('contactsTable');
   table.innerHTML = '';
@@ -596,7 +862,7 @@ function renderContacts() {
   if (!contacts.rows.length) return;
 
   const head = table.insertRow();
-  SHOW_COLS.concat('').forEach(c => { const th = document.createElement('th'); th.textContent = c.replace(' (server)', ''); head.append(th); });
+  cols.concat('').forEach(c => { const th = document.createElement('th'); th.textContent = c.replace(' (server)', '').replace('Owner', 'Collected by'); head.append(th); });
 
   contacts.rows.forEach(r => {
     const tr = table.insertRow();
@@ -614,7 +880,7 @@ function renderContacts() {
       del.title = 'Delete permanently (e.g. on a GDPR request)';
       del.addEventListener('click', () => {
         if (!confirm('Delete this contact permanently?')) return;
-        withBusy(del, async () => { await call('deleteContact', token, id); toast('Contact deleted'); await loadContacts(); });
+        withBusy(del, async () => { await postApi('deleteContact', { id }); toast('Contact deleted'); await loadContacts(); });
       });
       cell.append(del);
     }
@@ -630,7 +896,7 @@ $('exportCsv').addEventListener('click', () => {
     if (/^[=+\-@]/.test(s)) s = "'" + s;         // avoid formula injection in Excel
     return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const csv = [contacts.headers].concat(contacts.rows).map(r => r.map(esc).join(',')).join('\r\n');
+  const csv = [contacts.headers].concat(contacts.rows).map(r => r.map(esc).join(';')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'contacts-' + new Date().toISOString().slice(0, 10) + '.csv';
@@ -640,19 +906,10 @@ $('exportCsv').addEventListener('click', () => {
 /* ---------- first-time setup ---------- */
 $('setupForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const btn = e.submitter;
-  btn.disabled = true;
-  $('setupMsg').textContent = '';
-  try {
-    const res = await postApi('setup', { code: $('setupCode').value, password: $('setupPw').value });
-    saveToken(res.token);
+  const data = { code: $('setupCode').value, password: $('setupPw').value, firstName: $('setupFirst').value.trim(), email: $('setupEmail').value.trim() };
+  if (await signIn('setup', Object.assign({ login: data.email }, data), $('setupMsg'), e.submitter)) {
     $('setupCode').value = $('setupPw').value = '';
-    await openApp();
     toast('Welcome! Start with your profile.');
-  } catch (err) {
-    $('setupMsg').textContent = err.message;
-  } finally {
-    btn.disabled = false;
   }
 });
 
@@ -666,8 +923,7 @@ $('setupForm').addEventListener('submit', async e => {
   }
   try {
     const st = await postApi('setupStatus');
-    $('setupForm').hidden = !st.needsSetup;
-    $('loginForm').hidden = st.needsSetup;
+    showLogin(st.needsSetup ? 'setupForm' : 'loginForm');
     $('versionInfo').textContent = 'Version ' + st.version;
   } catch (e) { $('loginMsg').textContent = 'Cannot reach the backend. Check the endpoint in config.json.'; }
 })();
