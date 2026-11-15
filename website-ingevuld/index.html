@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact</title>
+<style>
+  :root { --primary:#0a3d62; --bg:#f4f6f8; --card:#ffffff; --text:#1c1c1c; --btnText:#ffffff; --overlay:#ffffff; --cardImg:none; --pageImg:none; --pageOverlay:transparent; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  /* fixed page background (works on iOS, unlike background-attachment: fixed) */
+  body::before { content:""; position:fixed; inset:0; z-index:-1; background:linear-gradient(var(--pageOverlay), var(--pageOverlay)), var(--pageImg) center/cover no-repeat; }
+  main { max-width:440px; margin:0 auto; padding:24px 16px 48px; }
+  .card { background:linear-gradient(var(--overlay), var(--overlay)), var(--cardImg) center/cover, var(--card); border-radius:16px; padding:24px; box-shadow:0 2px 12px rgba(0,0,0,.06); margin-bottom:16px; }
+  .muted { color:color-mix(in srgb, var(--text) 65%, transparent); }
+  .head { text-align:center; }
+  .logo { max-height:44px; max-width:180px; margin-bottom:14px; }
+  .photo { width:110px; height:110px; border-radius:50%; object-fit:cover; margin-bottom:10px; }
+  h1 { margin:0 0 4px; font-size:1.5rem; }
+  .role { margin:0 0 12px; }
+  .bio { font-size:.95rem; line-height:1.45; margin:0 0 12px; }
+  .row { display:flex; gap:8px; margin:6px 0; font-size:.95rem; word-break:break-word; }
+  .row span:first-child { width:72px; flex-shrink:0; }
+  a { color:var(--primary); }
+  button, .btn { display:block; width:100%; padding:14px; border:0; border-radius:10px; background:var(--primary); color:var(--btnText); font-size:1rem; font-weight:600; cursor:pointer; margin-top:12px; text-align:center; text-decoration:none; font-family:inherit; }
+  button.secondary, .btn.secondary { background:color-mix(in srgb, var(--primary) 12%, var(--card)); color:var(--primary); }
+  button.link { background:none; color:var(--primary); padding:8px; font-weight:500; font-size:.9rem; margin-top:4px; }
+  button:disabled { opacity:.6; }
+  h2 { margin:0 0 6px; font-size:1.15rem; }
+  p.hint { font-size:.9rem; margin:0 0 14px; }
+  .quick { display:flex; gap:10px; }
+  .quick .btn { margin-top:0; font-size:.95rem; padding:12px 8px; }
+  .divider { display:flex; align-items:center; gap:10px; margin:18px 0 6px; font-size:.85rem; }
+  .divider::before, .divider::after { content:""; flex:1; border-top:1px solid color-mix(in srgb, var(--text) 15%, transparent); }
+  label { display:block; font-size:.85rem; margin:10px 0 4px; }
+  input, textarea { width:100%; padding:11px; border:1px solid color-mix(in srgb, var(--text) 20%, transparent); border-radius:8px; font-size:1rem; font-family:inherit; background:var(--card); color:var(--text); }
+  .pair { display:flex; gap:10px; }
+  .pair > div { flex:1; min-width:0; }
+  .check { display:flex; gap:8px; align-items:flex-start; margin-top:12px; font-size:.85rem; }
+  .check input { width:auto; margin-top:2px; }
+  .check label { margin:0; }
+  details { margin-top:10px; font-size:.9rem; }
+  summary { cursor:pointer; color:var(--primary); }
+  .hp { position:absolute; left:-9999px; }
+  #status { margin-top:12px; font-size:.95rem; text-align:center; }
+  .center { text-align:center; }
+  .done { text-align:center; font-size:1.05rem; line-height:1.5; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card" id="owner"><p class="center muted">Loading…</p></section>
+
+  <section class="card" id="share" hidden>
+    <h2 id="shareTitle">Share your details</h2>
+    <p class="hint muted" id="shareHint"></p>
+
+    <div id="quickWrap">
+      <p class="hint muted" style="margin-bottom:8px">Quickest: just send a message</p>
+      <div class="quick" id="quick"></div>
+      <div class="divider muted">or fill in</div>
+    </div>
+
+    <form id="shareForm" novalidate>
+      <label for="name" class="muted">Name *</label>
+      <input id="name" name="name" required maxlength="100" autocomplete="name">
+      <div class="pair">
+        <div>
+          <label for="email" class="muted">Email</label>
+          <input id="email" name="email" type="email" maxlength="150" autocomplete="email" inputmode="email">
+        </div>
+        <div>
+          <label for="phone" class="muted">Phone</label>
+          <input id="phone" name="phone" type="tel" maxlength="40" autocomplete="tel">
+        </div>
+      </div>
+      <p class="muted" style="font-size:.8rem;margin:6px 0 0">Email or phone is enough.</p>
+      <details>
+        <summary>Add company or a note (optional)</summary>
+        <label for="company" class="muted">Organisation</label>
+        <input id="company" name="company" maxlength="100" autocomplete="organization">
+        <label for="note" class="muted">Note (e.g. where we met)</label>
+        <textarea id="note" name="note" rows="2" maxlength="500"></textarea>
+      </details>
+      <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <div class="check muted">
+        <input type="checkbox" id="consent">
+        <label for="consent" id="consentLabel"></label>
+      </div>
+      <div class="check muted">
+        <input type="checkbox" id="remember">
+        <label for="remember">Remember my details on this device, so sharing with the next card takes one tap.</label>
+      </div>
+      <button type="submit" id="submitBtn">Share my details</button>
+      <p class="muted center" style="font-size:.8rem;margin:8px 0 0" id="trust">Only used to follow up. No newsletters.</p>
+      <div id="status" role="status"></div>
+    </form>
+  </section>
+</main>
+
+<script>
+// Settings come from config.json next to this page (endpoint, defaultCardId). No code changes needed per customer.
+let ENDPOINT = null;
+let CARD_ID = "card-001";
+async function loadConfig() {
+  const c = await (await fetch("config.json", { cache: "no-cache" })).json();
+  ENDPOINT = c.endpoint;
+  // Card ID per card or event: add ?c=event-name to the URL on the chip
+  CARD_ID = (new URLSearchParams(location.search).get("c") || c.defaultCardId || "card-001").slice(0, 50);
+}
+const CACHE_KEY = "nfcCardProfile";
+const ME_KEY = "nfcCardMe";        // scanner's own details, only if they tick "remember"
+const QUEUE_KEY = "nfcCardQueue";  // submissions waiting for a connection
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isHttps = u => /^https:\/\//i.test(u || "");
+// Images may come back as a relative path (own server: /files/…). Resolve them against the backend,
+// and only accept https (or http while testing locally).
+function imgUrl(u) {
+  if (!u) return "";
+  try {
+    const abs = new URL(u, new URL(ENDPOINT || location.href, location.href)).href;
+    return /^https:\/\//i.test(abs) || (location.protocol === "http:" && /^http:\/\//i.test(abs)) ? abs : "";
+  } catch (e) { return ""; }
+}
+const isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+const phoneDigits = v => String(v || "").replace(/\D/g, "");
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+let profile = null;
+
+/* ---------- theme & images ---------- */
+function applyTheme(t) {
+  if (!t) return;
+  const r = document.documentElement.style;
+  const ok = c => /^#[0-9a-f]{6}$/i.test(c || "");
+  if (ok(t.primary)) r.setProperty("--primary", t.primary);
+  if (ok(t.background)) r.setProperty("--bg", t.background);
+  if (ok(t.card)) r.setProperty("--card", t.card);
+  if (ok(t.text)) r.setProperty("--text", t.text);
+  if (ok(t.buttonText)) r.setProperty("--btnText", t.buttonText);
+}
+
+const cssUrl = u => (u = imgUrl(u)) ? `url("${u.replace(/["\\\n]/g, "")}")` : "none";
+const rgba = (hex, a) => { const [R, G, B] = [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16)); return `rgba(${R}, ${G}, ${B}, ${a})`; };
+
+function applyImages(p) {
+  const r = document.documentElement.style;
+  const t = p.theme || {};
+  const ok = c => /^#[0-9a-f]{6}$/i.test(c || "");
+  const clamp = v => Math.max(0, Math.min(100, Number(v))) / 100;
+  r.setProperty("--overlay", rgba(ok(t.card) ? t.card : "#ffffff", imgUrl(p.cardBgUrl) ? clamp(t.cardOverlay ?? 85) : 1));
+  r.setProperty("--cardImg", cssUrl(p.cardBgUrl));
+  r.setProperty("--pageImg", cssUrl(p.pageBgUrl));
+  r.setProperty("--pageOverlay", rgba(ok(t.background) ? t.background : "#f4f6f8", imgUrl(p.pageBgUrl) ? clamp(t.pageOverlay ?? 30) : 0));
+}
+
+/* ---------- render ---------- */
+function render(p) {
+  profile = p;
+  applyTheme(p.theme);
+  applyImages(p);
+  const first = p.firstName || "the cardholder";
+  const fullName = [p.firstName, p.lastName].filter(Boolean).join(" ");
+  document.title = fullName || "Contact";
+  const role = [p.title, p.company].filter(Boolean).join(" · ");
+  const loc = [p.city, p.country].filter(Boolean).join(", ");
+
+  document.getElementById("owner").innerHTML = `
+    <div class="head">
+      ${imgUrl(p.logoUrl) ? `<img class="logo" src="${esc(imgUrl(p.logoUrl))}" alt="${esc(p.company)}">` : ""}
+      ${imgUrl(p.photoUrl) ? `<div><img class="photo" src="${esc(imgUrl(p.photoUrl))}" alt="${esc(fullName)}"></div>` : ""}
+      <h1>${esc(fullName)}</h1>
+      ${role ? `<p class="role muted">${esc(role)}</p>` : ""}
+      ${p.bio ? `<p class="bio">${esc(p.bio)}</p>` : ""}
+    </div>
+    ${p.phone ? `<div class="row"><span class="muted">Phone</span><a href="tel:${esc(p.phone.replace(/[^\d+]/g,""))}">${esc(p.phone)}</a></div>` : ""}
+    ${p.email ? `<div class="row"><span class="muted">Email</span><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div>` : ""}
+    ${isHttps(p.website) ? `<div class="row"><span class="muted">Web</span><a href="${esc(p.website)}" target="_blank" rel="noopener">${esc(p.website.replace(/^https:\/\//i,"").replace(/\/$/,""))}</a></div>` : ""}
+    ${isHttps(p.linkedin) ? `<div class="row"><span class="muted">LinkedIn</span><a href="${esc(p.linkedin)}" target="_blank" rel="noopener">View profile</a></div>` : ""}
+    ${loc ? `<div class="row"><span class="muted">Location</span><span>${esc(loc)}</span></div>` : ""}
+    <button id="exchangeBtn">Exchange details</button>
+    <button class="link" id="saveOnlyBtn">Only save ${esc(first)}'s contact</button>`;
+
+  document.getElementById("exchangeBtn").addEventListener("click", () => {
+    downloadVCard();
+    const share = document.getElementById("share");
+    share.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => {
+      const target = ["name", "email", "phone"].map(id => document.getElementById(id)).find(el => el && !el.value);
+      if (target) target.focus({ preventScroll: true });
+    }, 500);
+  });
+  document.getElementById("saveOnlyBtn").addEventListener("click", downloadVCard);
+
+  // Share section texts
+  document.getElementById("shareTitle").textContent = `Share your details with ${first}`;
+  document.getElementById("shareHint").textContent = `So ${first} can follow up with you.`;
+  const consent = (p.consentText || "I agree that {firstName} may store my details to get in touch with me.")
+    .replace(/\{firstName\}/g, first);
+  document.getElementById("consentLabel").innerHTML = esc(consent) +
+    (isHttps(p.privacyUrl) ? ` <a href="${esc(p.privacyUrl)}" target="_blank" rel="noopener">Privacy statement</a>` : "");
+
+  renderQuickButtons(p);
+  document.getElementById("share").hidden = false;
+}
+
+/* ---------- quick share: WhatsApp / email ---------- */
+function renderQuickButtons(p) {
+  const first = p.firstName || "";
+  const quick = document.getElementById("quick");
+  quick.innerHTML = "";
+  const greeting = `Hi ${first}, great to meet you!`;
+
+  // WhatsApp needs the number in international format (+31… or 0031…)
+  const raw = String(p.phone || "").trim();
+  const intl = /^(\+|00)/.test(raw) ? phoneDigits(raw).replace(/^00/, "") : "";
+  if (p.shareWhatsapp !== false && intl.length >= 8) {
+    const a = document.createElement("a");
+    a.className = "btn secondary";
+    a.href = `https://wa.me/${intl}?text=${encodeURIComponent(greeting + " This is my number.")}`;
+    a.target = "_blank"; a.rel = "noopener";
+    a.textContent = "WhatsApp";
+    quick.appendChild(a);
+  }
+  if (p.shareEmail !== false && isEmail(p.email || "")) {
+    const body = `${greeting}\n\nMy details:\nName: \nCompany: \nPhone: \n`;
+    const a = document.createElement("a");
+    a.className = "btn secondary";
+    a.href = `mailto:${p.email}?subject=${encodeURIComponent("Nice to meet you")}&body=${encodeURIComponent(body)}`;
+    a.textContent = "Email";
+    quick.appendChild(a);
+  }
+  document.getElementById("quickWrap").hidden = quick.children.length === 0;
+}
+
+/* ---------- vCard ---------- */
+const vc = s => String(s || "").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/([,;])/g,"\\$1");
+
+function downloadVCard() {
+  const p = profile;
+  const lines = [
+    "BEGIN:VCARD", "VERSION:3.0",
+    `N:${vc(p.lastName)};${vc(p.firstName)};;;`,
+    `FN:${vc([p.firstName, p.lastName].filter(Boolean).join(" "))}`,
+    p.company && `ORG:${vc(p.company)}`,
+    p.title && `TITLE:${vc(p.title)}`,
+    p.phone && `TEL;TYPE=CELL:${vc(p.phone)}`,
+    p.email && `EMAIL;TYPE=WORK:${vc(p.email)}`,
+    isHttps(p.website) && `URL:${p.website}`,
+    isHttps(p.linkedin) && `X-SOCIALPROFILE;TYPE=linkedin:${p.linkedin}`,
+    (p.city || p.country) && `ADR;TYPE=WORK:;;;${vc(p.city)};;;${vc(p.country)}`,
+    "END:VCARD"
+  ].filter(Boolean).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines], { type: "text/vcard;charset=utf-8" }));
+  a.download = `${(p.firstName || "contact")}_${(p.lastName || "")}.vcf`.replace(/\s+/g, "_");
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------- remembered details (scanner's own device only) ---------- */
+function prefillMe() {
+  const me = store.get(ME_KEY);
+  if (!me) return;
+  ["name", "email", "phone", "company"].forEach(k => { if (me[k]) document.getElementById(k).value = me[k]; });
+  document.getElementById("remember").checked = true;
+  document.getElementById("submitBtn").textContent = "Share my details (one tap)";
+}
+
+/* ---------- sending, with offline queue ---------- */
+async function send(item) {
+  // text/plain keeps this a "simple" request, so no CORS preflight is needed
+  await fetch(item.endpoint, { method: "POST", mode: "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(item.payload) });
+}
+
+function enqueue(item) {
+  const q = store.get(QUEUE_KEY) || [];
+  q.push(item);
+  store.set(QUEUE_KEY, q.slice(-20));
+}
+
+let flushing = false;
+async function flushQueue() {
+  if (flushing || !navigator.onLine) return;   // never run twice at the same time
+  const q = store.get(QUEUE_KEY) || [];
+  if (!q.length) return;
+  flushing = true;
+  store.del(QUEUE_KEY);                         // take the items out first, put back what fails
+  const left = [];
+  for (const item of q) {
+    try { await send(item); } catch (e) { left.push(item); }
+  }
+  if (left.length) left.forEach(enqueue);
+  flushing = false;
+}
+
+const form = document.getElementById("shareForm");
+const statusEl = document.getElementById("status");
+const btn = document.getElementById("submitBtn");
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(form));
+  if (d.website) return; // honeypot: bots fill this in
+  const name = d.name.trim(), email = d.email.trim(), phone = d.phone.trim();
+  if (!name) { statusEl.textContent = "Please enter your name."; return; }
+  if (!email && !phone) { statusEl.textContent = "Please enter your email or phone number."; return; }
+  if (email && !isEmail(email)) { statusEl.textContent = "Please check your email address."; return; }
+  if (phone && phoneDigits(phone).length < 6) { statusEl.textContent = "Please check your phone number."; return; }
+  if (!document.getElementById("consent").checked) { statusEl.textContent = "Please tick the consent box to share your details."; return; }
+
+  const me = { name, email, phone, company: d.company.trim() };
+  if (document.getElementById("remember").checked) store.set(ME_KEY, me); else store.del(ME_KEY);
+
+  if (!ENDPOINT) { statusEl.textContent = "Card not loaded yet. Please check your connection."; return; }
+  const item = {
+    endpoint: ENDPOINT,
+    payload: {
+      ...me, note: d.note.trim(), cardId: CARD_ID,
+      clientTimestamp: new Date().toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      userAgent: navigator.userAgent, consent: true
+    }
+  };
+
+  btn.disabled = true; statusEl.textContent = "Sending…";
+  let queued = false;
+  if (!navigator.onLine) { enqueue(item); queued = true; }
+  else {
+    try { await send(item); } catch (err) { enqueue(item); queued = true; }
+  }
+  showDone(name, queued);
+});
+
+function showDone(name, queued) {
+  const first = esc(profile.firstName || "The cardholder");
+  form.innerHTML = queued
+    ? `<p class="done">Thanks, ${esc(name.split(" ")[0])}! You seem to be offline. Your details are saved on this device and will be sent to ${first} automatically when you're back online.</p>`
+    : `<p class="done">Thanks, ${esc(name.split(" ")[0])}! ${first} has received your details.</p>`;
+  document.getElementById("quickWrap").hidden = true;
+}
+
+/* ---------- load ---------- */
+async function loadProfile() {
+  const cached = store.get(CACHE_KEY);
+  if (cached) render(cached);                       // instant render, refreshed below
+  try {
+    await loadConfig();
+    const res = await fetch(ENDPOINT);
+    const data = await res.json();
+    if (!data.ok || !data.profile) throw new Error("bad response");
+    render(data.profile);
+    store.set(CACHE_KEY, data.profile);
+  } catch (e) {
+    if (!cached) document.getElementById("owner").innerHTML =
+      `<p class="center">This card could not be loaded. Please check your connection and try again.</p>`;
+  }
+}
+
+window.addEventListener("online", flushQueue);
+prefillMe();
+loadProfile();
+flushQueue();
+</script>
+</body>
+</html>
