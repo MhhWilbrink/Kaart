@@ -202,6 +202,14 @@
       <h2>Follow up</h2>
       <div class="chips" id="followChips"></div>
       <input type="date" id="followDate" style="margin-top:10px">
+      <div id="calRow" hidden>
+        <p class="muted small" style="margin:10px 0 6px">Put this follow-up in your calendar (9:00 on that day):</p>
+        <div class="chips">
+          <button type="button" class="chip" id="calIcs">iPhone / Outlook app</button>
+          <button type="button" class="chip" id="calOutlook">Outlook 365</button>
+          <button type="button" class="chip" id="calGoogle">Google Calendar</button>
+        </div>
+      </div>
     </div>
     <div class="panel">
       <h2>My notes</h2>
@@ -235,6 +243,19 @@
           <button class="btn ghost" id="evCancel" type="button" hidden>Cancel</button>
         </div>
       </form>
+    </div>
+    <div class="panel">
+      <h2>Follow-up email</h2>
+      <p class="small muted" style="margin:0 0 6px">Used by the <b>Follow-up email</b> button on a contact. Placeholders:
+        {firstName} {name} {company} {event} {atEvent} {myName} {myFirstName} {myTitle} {myCompany} {myPhone} {myEmail} {myCard}</p>
+      <label for="fuSubject">Subject</label>
+      <input id="fuSubject" maxlength="150">
+      <label for="fuBody">Message</label>
+      <textarea id="fuBody" rows="10" maxlength="3000"></textarea>
+      <div class="actions">
+        <button class="btn" type="button" id="fuSave">Save</button>
+        <button class="btn ghost" type="button" id="fuReset">Default text</button>
+      </div>
     </div>
     <div class="panel">
       <h2>Notifications</h2>
@@ -325,6 +346,7 @@ let token = ls.get('ownerToken', null);
 let contacts = ls.get('ownerRecent', []);
 let seenUpTo = ls.get('ownerSeen', '');
 let events = ls.get('ownerEvents', []);
+let me = ls.get('ownerMe', null);           // your own card details and follow-up template
 let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
 let current = null;       // contact being edited, or {isNew:true}
 let form = null;          // {tags:Set, followUp, myNotes}
@@ -510,8 +532,9 @@ $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeo
 async function refresh(silent) {
   if (!navigator.onLine) { renderBanner(); return; }
   try {
-    const [fresh, evs] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null)]);
+    const [fresh, evs, who] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null)]);
     if (Array.isArray(evs)) { events = evs; ls.set('ownerEvents', events); }
+    if (who && who.profile) { me = who; ls.set('ownerMe', me); }
     // keep local, not-yet-synced edits visible
     const q = queue();
     q.forEach(op => {
@@ -546,6 +569,7 @@ function renderChips() {
     f.appendChild(chip(label, form.followUp === d, '', () => { form.followUp = form.followUp === d ? '' : d; $('followDate').value = form.followUp; renderChips(); }));
   });
   if (form.followUp) f.appendChild(chip('Clear', false, '', () => { form.followUp = ''; $('followDate').value = ''; renderChips(); }));
+  $('calRow').hidden = !form.followUp;
 }
 $('followDate').addEventListener('change', e => { form.followUp = e.target.value; renderChips(); });
 
@@ -577,8 +601,10 @@ function openContact(id) {
         ${phone && /^(\+|00)/.test(phone) ? `<a href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
         ${email ? `<a href="mailto:${esc(email)}">Email</a>` : ''}
       </div>
+      ${email ? `<div class="actions" style="margin-top:8px"><a href="#" id="fuMail">Follow-up email</a></div>` : ''}
     </div>`;
   $('addFields').hidden = true;
+  if ($('fuMail')) $('fuMail').addEventListener('click', ev => { ev.preventDefault(); location.href = followUpMailto(current); });
   $('deletePanel').hidden = false;
   $('workPanel').hidden = false;
   $('eTitle').value = clean(c.title); $('eWebsite').value = clean(c.website);
@@ -815,6 +841,85 @@ $('scanInput').addEventListener('change', async e => {
   btn.classList.remove('off'); btn.querySelector('span').textContent = 'Scan another card';
 });
 
+/* ---------- follow-up email and calendar ---------- */
+const DEFAULT_FU = {
+  subject: 'Good to meet you{atEvent}',
+  body: 'Dear {firstName},\n\nThank you for the good conversation{atEvent}. As promised, I am following up on what we discussed.\n\n\n\nPlease let me know if you have any questions.\n\nKind regards,\n\n{myName}\n{myTitle}\n{myCompany}\n{myPhone}\n{myCard}'
+};
+function fuTemplate() {
+  const p = (me && me.profile) || {};
+  return { subject: p.followUpSubject || DEFAULT_FU.subject, body: p.followUpBody || DEFAULT_FU.body };
+}
+function fillTemplate(text, c) {
+  const p = (me && me.profile) || {};
+  const ev = eventsOf(c)[0];
+  const first = clean(c.name).split(' ')[0] || '';
+  const vals = {
+    firstName: first, name: clean(c.name), company: clean(c.company), event: ev ? ev.name : '', atEvent: ev ? ' at ' + ev.name : '',
+    myName: [p.firstName, p.lastName].filter(Boolean).join(' '), myFirstName: p.firstName || '', myTitle: p.title || '', myCompany: p.company || '',
+    myPhone: p.phone || '', myEmail: p.email || '', myCard: me && me.slug ? new URL('../?u=' + encodeURIComponent(me.slug), location.href).href : ''
+  };
+  return text.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m))
+    .split('\n').filter((line, i, arr) => !(line.trim() === '' && /\{my\w+\}/.test((text.split('\n')[i] || '')))).join('\n')   // drop empty signature lines
+    .replace(/\n{4,}/g, '\n\n\n');
+}
+function followUpMailto(c) {
+  const t = fuTemplate();
+  return 'mailto:' + encodeURIComponent(clean(c.email)) + '?subject=' + encodeURIComponent(fillTemplate(t.subject, c)) + '&body=' + encodeURIComponent(fillTemplate(t.body, c).replace(/\n/g, '\r\n'));
+}
+function fillFuForm() { const t = fuTemplate(); $('fuSubject').value = t.subject; $('fuBody').value = t.body; }
+$('fuReset').addEventListener('click', () => { $('fuSubject').value = DEFAULT_FU.subject; $('fuBody').value = DEFAULT_FU.body; });
+$('fuSave').addEventListener('click', async e => {
+  const btn = e.target; btn.disabled = true;
+  try {
+    const subject = $('fuSubject').value.trim(), body = $('fuBody').value.trim();
+    await api('saveFollowUpTemplate', { subject: subject === DEFAULT_FU.subject ? '' : subject, body: body === DEFAULT_FU.body.trim() ? '' : body });
+    me = me || { profile: {} }; me.profile.followUpSubject = subject === DEFAULT_FU.subject ? '' : subject; me.profile.followUpBody = body === DEFAULT_FU.body.trim() ? '' : body;
+    ls.set('ownerMe', me);
+    toast('Follow-up text saved');
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+  btn.disabled = false;
+});
+
+function calInfo() {
+  const c = current || {};
+  const d = form.followUp;
+  const who = clean(c.name) + (clean(c.company) ? ' (' + clean(c.company) + ')' : '');
+  const lines = [clean(c.title), clean(c.company), clean(c.email), clean(c.phone), '', $('myNotes').value.trim(),
+    c.id && !c.isNew ? '\nOpen in the app: ' + new URL('#c=' + encodeURIComponent(c.id), location.href).href : ''].filter((x, i) => x || i === 4);
+  return { title: 'Follow up: ' + (who || 'contact'), details: lines.join('\n').trim(), date: d.replace(/-/g, '') };
+}
+function icsEscape(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+$('calIcs').addEventListener('click', async () => {
+  const i = calInfo();
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//NFC card//Follow-up//EN', 'BEGIN:VEVENT',
+    'UID:' + (current.id || uuid()) + '-followup@nfc-card', 'DTSTAMP:' + stamp,
+    'DTSTART:' + i.date + 'T090000', 'DTEND:' + i.date + 'T091500',
+    'SUMMARY:' + icsEscape(i.title), 'DESCRIPTION:' + icsEscape(i.details),
+    'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(i.title), 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const name = 'follow-up-' + fold(clean(current.name) || 'contact').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.ics';
+  const file = new File([ics], name, { type: 'text/calendar' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: i.title }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+$('calGoogle').addEventListener('click', () => {
+  const i = calInfo();
+  const next = new Date(form.followUp + 'T12:00:00'); next.setDate(next.getDate() + 1);
+  const end = next.toLocaleDateString('sv-SE').replace(/-/g, '');
+  window.open('https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(i.title) +
+    '&dates=' + i.date + 'T090000/' + i.date + 'T091500&details=' + encodeURIComponent(i.details), '_blank', 'noopener');
+});
+$('calOutlook').addEventListener('click', () => {
+  const i = calInfo();
+  window.open('https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent&subject=' + encodeURIComponent(i.title) +
+    '&startdt=' + form.followUp + 'T09:00:00&enddt=' + form.followUp + 'T09:15:00&body=' + encodeURIComponent(i.details), '_blank', 'noopener');
+});
+
 let viewerDelete = null;
 function openViewer(url, onDelete) { $('viewerImg').src = url; viewerDelete = onDelete; $('viewer').hidden = false; }
 function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); viewerDelete = null; }
@@ -934,6 +1039,7 @@ async function pushState() {
 
 async function openSettings() {
   show('vSettings');
+  fillFuForm();
   renderEvents(); editEvent(null);
   $('installText').textContent = isStandalone
     ? 'Installed. You are using the app from your home screen.'
@@ -1034,7 +1140,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 function signOutLocal() {
   token = null;
-  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter');
+  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe');
   idbSet('token', null);
   contacts = []; events = []; filter = '';
   location.hash = '';
