@@ -1,5 +1,5 @@
 /* Service worker for the owner app: offline app shell + push notifications */
-const CACHE = 'owner-app-v8';
+const CACHE = 'owner-app-v9';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', '../config.json'];
 
 self.addEventListener('install', e => {
@@ -17,6 +17,18 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // The app page itself and its settings: try the network first (so updates arrive on the first open),
+  // fall back to the cached copy when offline or when the network is slow.
+  const fresh = req.mode === 'navigate' || /\/(index\.html|config\.json)?$/.test(new URL(req.url).pathname);
+  if (fresh) {
+    e.respondWith(caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(req, { ignoreSearch: true });
+      const net = fetch(req, { cache: 'no-cache' }).then(res => { if (res.ok) cache.put(req, res.clone()); return res; });
+      if (!cached) return net;
+      return Promise.race([net.catch(() => cached), new Promise(r => setTimeout(() => r(cached), 4000))]);
+    }));
+    return;
+  }
   e.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(req, { ignoreSearch: true });
     const network = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => cached);
