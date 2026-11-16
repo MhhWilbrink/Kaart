@@ -3,15 +3,43 @@
    Input: lines [{ text, h }] (h = letter height in pixels, from the text reader) and/or a QR code payload. */
 (function (root) {
   const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-  const URLRX = /\b((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|nl|de|be|fr|uk|no|dk|se|fi|pl|it|es|eu|org|net|io|gov|mil|int|co|ca|au|us)(?:\/[^\s]*)?)/i;
+  const URLRX = /\b((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|nl|de|be|fr|uk|no|dk|se|fi|pl|it|es|eu|org|net|io|gov|mil|int|co|ca|au|us|hr|at|ch|pt|gr|ee|lv|lt|ro|bg|si|sk|cz|hu|tr|is)(?:\/[^\s]*)?)/i;
   const PHONE = /(\+|00)?[\d][\d ()./-]{6,}\d/;
-  const LEGAL = /\b(b\.?v\.?|n\.?v\.?|ltd\.?|limited|gmbh|ag|inc\.?|llc|plc|s\.?a\.?|s\.?r\.?l\.?|a\/s|as|ab|oy|sp\.? ?z\.? ?o\.? ?o\.?|corp\.?|company|group|holding|systems|technologies|technology|defence|defense|navy|naval|marine|maritime|ministry|agency|university|institute|foundation|kongsberg|thales|saab|damen)\b/i;
-  const TITLE = /\b(manager|director|engineer|officer|commander|captain|lieutenant|admiral|colonel|major|head|lead|leader|chief|ceo|cto|cfo|coo|vp|vice|president|founder|owner|partner|consultant|advisor|adviser|specialist|analyst|architect|developer|scientist|researcher|surveyor|hydrographer|sales|business|account|project|program|programme|product|marketing|procurement|buyer|technician|operator|coordinator|assistant|secretary|attach[eé]|professor|dr\.?|sr\.?|senior|junior|principal)\b/i;
-  const SKIP = /^(tel|phone|mobile|mob|m|t|f|fax|e|email|e-mail|mail|w|web|www|address|adres)[.:]?\s*/i;
+  // legal forms: the line is almost certainly the company name
+  const LEGAL = /\b(b\.?v\.?|n\.?v\.?|ltd\.?|limited|gmbh|ag|inc\.?|llc|plc|s\.?a\.?s?|s\.?r\.?l\.?|s\.?p\.?a\.?|a\/s|asa|as|ab|oy|oyj|sp\.? ?z\.? ?o\.? ?o\.?|d\.?o\.?o\.?|corp\.?|kg|se)\b\.?/i;
+  // organisations without a legal form (defence, government, research); stronger words first
+  const ORG = [
+    /\b(navy|naval|marine|mornarica|marina|marynarka|sjøforsvaret|marinen|kriegsmarine|coast ?guard|kustwacht|obalna straža|army|air force|luchtmacht|landmacht|krijgsmacht|bundeswehr|armed forces|forsvaret)\b/i,
+    /\b(command|commando|kommando|zapovjedni\S*|headquarters|nato|ncia|nspa|occar|dmo)\b/i,
+    /\b(ministry|ministarstvo|ministerie|ministerium|minist[eè]re|ministerstwo|departement|department|agency|agentschap|bundesamt|directorate|university|universiteit|universität|institute|instituut|institut|tno|fraunhofer|foundation|republi\S*|snage|forces)\b/i,
+    /\b(group|groep|gruppe|holding|systems|technologies|technology|solutions|engineering|industries|defen[cs]e|robotics|maritime|shipyard|werft)\b/i
+  ];
+  const GENERIC = /^(group|groep|gruppe|holding|company|ltd|gmbh|inc|systems|solutions|international)$/i;
+  const TITLE = /\b(manager|director|directeur|directrice|direktor|engineer|ingenieur|ingénieur|officer|commander|captain|lieutenant|admiral|colonel|major|head|hoofd|leiter|leiterin|lead|leader|chief|ceo|cto|cfo|coo|cco|cio|cso|cmo|vp|vice|president|founder|owner|partner|consultant|advisor|adviser|adviseur|specialist|analyst|architect|developer|scientist|researcher|surveyor|hydrographer|sales|business development|account|project|program|programme|product|marketing|procurement|buyer|inkoper|technician|operator|coordinator|co[öo]rdinator|assistant|secretary|attach[eé]|professor|senior|junior|principal|voditelj|načelnik|nacelnik|zapovjednik|savjetnik|referent|responsable|chef|kierownik|dyrektor|sjef|rådgiver|leder|teamleider|afdelingshoofd|beleidsmedewerker|medewerker)\b/i;
+  // ranks and honorifics in front of a name (moved to the job title)
+  const RANK = /^(brigadir|kontraadmiral|viceadmiral|admiral|kapetan bojnog broda|kapetan fregate|kapetan korvete|kapetan|pukovnik|bojnik|satnik|poru[čc]nik|commodore|rear admiral|vice admiral|captain|capt\.?|commander|cdr\.?|lcdr\.?|lt\.? ?cdr\.?|lieutenant commander|lieutenant|lt\.?|colonel|col\.?|lt\.? ?col\.?|major|maj\.?|brigadier|general|gen\.?|kapitein ter zee|kapitein-luitenant ter zee|kltz|ktz|ltz\d?|kolonel|majoor|kapitein|fregattenkapit[äa]n|korvettenkapit[äa]n|kapit[äa]n zur see|kapit[äa]nleutnant|oberst|oberstleutnant|capitaine de (?:vaisseau|fr[ée]gate|corvette)|capitaine|kommand[øo]r(?:kaptein)?|orlogskaptein|kaptein|komandor(?: porucznik)?|kmdr\.?|dr\.?|drs\.?|ir\.?|ing\.?|prof\.?|mr\.?|mrs\.?|ms\.?|dipl\.?-ing\.?)\s+/i;
+  const SKIP = /^(tel|phone|telefon|telefoon|mobile|mobiel|mobil|mob|gsm|cell|m|t|f|fax|e|email|e-mail|mail|w|web|www|address|adres)[.:]*\s*/i;
   const LABELS = /^(name|naam|company|bedrijf|organi[sz]ation|title|functie)\s*[:]\s*/i;
+  const PARTICLE = /^(van|von|de|der|den|du|da|di|la|le|ten|ter|op|het|'t|y|bin|al|zu|del|dos|das)$/i;
+  const MOBILE = /^(\+31\s?\(?0?\)?\s?6|06|\+44\s?\(?0?\)?\s?7|\+49\s?\(?0?\)?\s?1[5-7]|\+385\s?\(?0?\)?\s?9|\+33\s?\(?0?\)?\s?[67]|\+47\s?[49])/;
 
   const tidy = s => String(s || '').replace(/[|_~•·]+/g, ' ').replace(/\s+/g, ' ').trim();
   const letters = s => (s.match(/\p{L}/gu) || []).length;
+  const orgLevel = s => { const i = ORG.findIndex(rx => rx.test(s)); return i < 0 ? 99 : i; };
+
+  // "ROBERTO KRAMARIC" -> "Roberto Kramaric", "Raphaël BOURDON" -> "Raphaël Bourdon", particles stay small
+  function nameCase(s) {
+    return s.split(' ').map((w, i) => {
+      if (i > 0 && PARTICLE.test(w)) return w.toLowerCase();
+      if (w.length > 1 && w === w.toUpperCase() && /\p{L}{2}/u.test(w)) return w.split('-').map(p => p.charAt(0) + p.slice(1).toLowerCase()).join('-');
+      return w;
+    }).join(' ');
+  }
+
+  function splitRank(s) {
+    const m = s.match(RANK);
+    return m ? { rank: m[0].trim(), rest: s.slice(m[0].length).trim() } : { rank: '', rest: s };
+  }
 
   function phoneFrom(s) {
     const m = s.replace(/[oO](?=\d)/g, '0').match(PHONE);
@@ -21,12 +49,12 @@
   }
 
   function looksLikeName(s) {
-    if (!s || /\d|@|www|http/i.test(s) || LEGAL.test(s) || TITLE.test(s)) return false;
+    if (!s || /\d|@|www|http|[|/\\]/i.test(s) || LEGAL.test(s) || TITLE.test(s) || orgLevel(s) < 99) return false;
     const words = s.split(' ').filter(Boolean);
     if (words.length < 2 || words.length > 5) return false;
-    // "Anna de Boer", "Jürgen Müller", "VAN DER BERG, Piet": mostly capitalised words, small particles allowed
+    if (words.some(w => w.length === 1 && !/^\p{Lu}\.?$/u.test(w))) return false;
     const caps = words.filter(w => /^\p{Lu}/u.test(w)).length;
-    const particles = words.filter(w => /^(van|von|de|der|den|du|da|di|la|le|ten|ter|op|het|'t|y|bin|al)$/i.test(w)).length;
+    const particles = words.filter(w => PARTICLE.test(w)).length;
     return caps + particles === words.length && caps >= 2 && letters(s) >= 4;
   }
 
@@ -49,23 +77,32 @@
     else if (/^MECARD:/i.test(qr)) Object.assign(out, fromMecard(qr), { source: 'qr' });
     if (out.source === 'qr' && out.name) return out;
 
-    const lines = (input.lines || []).map(l => ({ text: tidy(l.text), h: l.h || 0 })).filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
+    const lines = (input.lines || []).map(l => ({ text: tidy(l.text), h: l.h || 0 }))
+      .filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
     const used = new Set();
     const all = lines.map(l => l.text).join('\n');
 
     const em = all.match(EMAIL);
     if (em) out.email = em[0].replace(/[.,;]+$/, '').toLowerCase();
+
+    // phone numbers: mobile first, then landline; never fax
+    const phones = [];
     lines.forEach((l, i) => {
+      if (EMAIL.test(l.text)) { used.add(i); return; }
+      if (/^\s*(fax|f)\b[.:]*/i.test(l.text)) { if (phoneFrom(l.text)) used.add(i); return; }
       const t = l.text.replace(SKIP, '');
-      if (EMAIL.test(l.text)) used.add(i);
-      if (!out.phone && !EMAIL.test(l.text) && /(\+|00|tel|phone|mob|^t\b|^m\b|\d{3})/i.test(l.text)) {
-        const p = phoneFrom(t);
-        if (p && (p.replace(/\D/g, '').length / t.replace(/\s/g, '').length) > 0.5) { out.phone = p; used.add(i); }
+      const p = phoneFrom(t);
+      if (p && (p.replace(/\D/g, '').length / Math.max(1, t.replace(/\s/g, '').length)) > 0.5) {
+        phones.push({ p, mobile: /^\s*(mob|mobile|mobiel|mobil|gsm|cell|m)\b/i.test(l.text) || MOBILE.test(p) });
+        used.add(i);
       }
-      if (!out.website && !EMAIL.test(l.text)) {
-        const w = l.text.match(URLRX);
-        if (w && /www\.|https?:|\//i.test(w[0]) || (w && l.text.trim().length === w[0].length)) { out.website = w[0]; used.add(i); }
-      }
+    });
+    if (phones.length) out.phone = (phones.find(x => x.mobile) || phones[0]).p;
+
+    lines.forEach((l, i) => {
+      if (out.website || EMAIL.test(l.text)) return;
+      const w = l.text.match(URLRX);
+      if (w && (/www\.|https?:|\//i.test(w[0]) || l.text.trim().length <= w[0].length + 2)) { out.website = w[0]; used.add(i); }
     });
 
     // labelled lines ("Name: …") on some badges
@@ -80,34 +117,54 @@
       used.add(i);
     });
 
-    const free = lines.map((l, i) => Object.assign({ i }, l)).filter(l => !used.has(l.i));
+    const free = () => lines.map((l, i) => Object.assign({ i }, l)).filter(l => !used.has(l.i));
+    let rank = '', nameIdx = -1;
     if (!out.name) {
-      // the biggest text that looks like a name; on badges the name is printed largest
-      const cands = free.filter(l => looksLikeName(l.text)).sort((x, y) => y.h - x.h || x.i - y.i);
-      if (cands.length) { out.name = cands[0].text; used.add(cands[0].i); }
-    }
+      // the biggest text that looks like a name (after taking off a rank such as "brigadir" or "Cdr")
+      const cands = free().map(l => Object.assign(l, splitRank(l.text))).filter(l => looksLikeName(l.rest))
+        .sort((x, y) => y.h - x.h || (y.rank ? 1 : 0) - (x.rank ? 1 : 0) || x.i - y.i);
+      if (cands.length) { out.name = nameCase(cands[0].rest); rank = cands[0].rank; nameIdx = cands[0].i; used.add(nameIdx); }
+    } else out.name = nameCase(out.name);
+
     if (!out.title) {
-      const t = free.find(l => !used.has(l.i) && TITLE.test(l.text) && !/\d|@/.test(l.text) && l.text.length <= 70);
+      const t = free().find(l => TITLE.test(l.text) && !/\d|@/.test(l.text) && l.text.length <= 80 && orgLevel(l.text) > 1);
       if (t) { out.title = t.text; used.add(t.i); }
+      else if (nameIdx >= 0) {
+        // no known job word: the line right under the name usually is the job title
+        const next = lines[nameIdx + 1];
+        if (next && !used.has(nameIdx + 1) && next.text !== next.text.toUpperCase() && !/\d|@|www/i.test(next.text) && !LEGAL.test(next.text) && orgLevel(next.text) > 2 && letters(next.text) >= 3 && next.text.length <= 80) {
+          out.title = next.text; used.add(nameIdx + 1);
+        }
+      }
     }
+    if (rank) out.title = [rank.charAt(0).toUpperCase() + rank.slice(1), out.title].filter(Boolean).join(', ');
+
     if (!out.company) {
-      const c = free.find(l => !used.has(l.i) && LEGAL.test(l.text) && !/@|www/i.test(l.text) && l.text.length <= 60);
+      const ok = l => !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim());
+      const legal = free().find(l => ok(l) && LEGAL.test(l.text));
+      const org = free().filter(l => ok(l) && orgLevel(l.text) < ORG.length).sort((x, y) => orgLevel(x.text) - orgLevel(y.text) || x.i - y.i)[0];
+      const c = legal || org;
       if (c) { out.company = c.text; used.add(c.i); }
     }
+    const domainWord = () => {
+      const host = out.email.split('@')[1] || out.website.replace(/^(https?:\/\/)?(www\.)?/i, '').split('/')[0] || '';
+      const dom = host.split('.');
+      if (dom.length < 2 || /^(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|proton|protonmail|gmx|ziggo|kpnmail|planet|home|xs4all|web|t-online|orange|free|wanadoo|libero)$/i.test(dom[0])) return '';
+      return dom[dom.length - 2] === 'co' || dom[dom.length - 2] === 'com' ? dom[dom.length - 3] : dom[dom.length - 2];
+    };
     if (!out.company) {
-      // fall back to the email domain: anna@kongsberg.com -> Kongsberg
-      const dom = (out.email.split('@')[1] || '').split('.');
-      const free2 = /^(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|proton|protonmail|gmx|ziggo|kpnmail|planet|home|xs4all)$/i;
-      if (dom.length > 1 && !free2.test(dom[0])) {
-        const word = dom[dom.length - 2] === 'co' || dom[dom.length - 2] === 'com' ? dom[dom.length - 3] : dom[dom.length - 2];
-        const hit = free.find(l => !used.has(l.i) && word && l.text.toLowerCase().replace(/[^a-z0-9]/g, '').includes(word.replace(/[^a-z0-9]/g, '')));
-        out.company = hit ? hit.text : (word || '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const word = domainWord();
+      if (word) {
+        const key = word.replace(/[^a-z0-9]/gi, '').toLowerCase();
+        const hit = free().find(l => l.text.toLowerCase().replace(/[^a-z0-9]/g, '').includes(key) && !GENERIC.test(l.text));
+        out.company = hit ? hit.text : (word.length <= 5 ? word.toUpperCase() : word.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        if (hit) used.add(hit.i);
       }
     }
     if (!out.company && out.name) {
       // badges: the company is usually the next biggest text that is not the event or the visitor type
       const BADGE = /^(visitor|exhibitor|speaker|delegate|press|media|staff|crew|organi[sz]er|vip|guest|attendee|contractor|bezoeker|standhouder)$/i;
-      const c = free.filter(l => !used.has(l.i) && !/\d|@|www/i.test(l.text) && !BADGE.test(l.text) && letters(l.text) >= 3 && l.text.length <= 60)
+      const c = free().filter(l => !/\d|@|www/i.test(l.text) && !BADGE.test(l.text) && !GENERIC.test(l.text) && letters(l.text) >= 3 && l.text.length <= 60)
         .sort((x, y) => y.h - x.h || x.i - y.i)[0];
       if (c) { out.company = c.text; used.add(c.i); }
     }
@@ -115,6 +172,5 @@
     return out;
   }
 
-  root.CardParse = { parse, looksLikeName };
-  if (typeof module !== 'undefined') module.exports = root.CardParse;
+  root.CardParse = { parse, looksLikeName, nameCase };
 })(typeof window !== 'undefined' ? window : globalThis);

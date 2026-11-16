@@ -1,0 +1,253 @@
+/* Business card / badge photo -> text lines, on the phone.
+   Steps: find the card in the photo and crop it, turn it the right way up, boost contrast, read the text.
+   Needs Tesseract (tesseract.min.js) for reading; QR codes are read separately by the app. */
+(function (root) {
+  function toCanvas(img, max) {
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const s = Math.min(1, max / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * s); c.height = Math.round(h * s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function gray(ctx, w, h) {
+    const d = ctx.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    return g;
+  }
+
+  function otsu(g) {
+    const hist = new Array(256).fill(0); g.forEach(v => hist[v]++);
+    let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sumB = 0, wB = 0, best = 0, t = 128;
+    for (let i = 0; i < 256; i++) {
+      wB += hist[i]; if (!wB) continue;
+      const wF = g.length - wB; if (!wF) break;
+      sumB += i * hist[i];
+      const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > best) { best = v; t = i; }
+    }
+    return t;
+  }
+
+  // The card is the largest bright area. Returns a crop box in the coordinates of `src`, or null.
+  function findCard(src) {
+    const small = toCanvas(src, 360), w = small.width, h = small.height;
+    const g = gray(small.getContext('2d'), w, h);
+    const t = otsu(g);
+    const bright = new Uint8Array(w * h); g.forEach((v, i) => bright[i] = v > t ? 1 : 0);
+    // close small gaps (text, logos) so the card is one area: dilate twice
+    let m = bright;
+    for (let k = 0; k < 3; k++) {
+      const n = new Uint8Array(w * h);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        n[i] = m[i] || m[i - 1] || m[i + 1] || m[i - w] || m[i + w] ? 1 : 0;
+      }
+      m = n;
+    }
+    const seen = new Uint8Array(w * h); let best = null;
+    for (let s = 0; s < w * h; s++) {
+      if (!m[s] || seen[s]) continue;
+      let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0; const stack = [s]; seen[s] = 1;
+      while (stack.length) {
+        const i = stack.pop(), x = i % w, y = (i / w) | 0; n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        [i - 1, i + 1, i - w, i + w].forEach(j => { if (j >= 0 && j < w * h && m[j] && !seen[j] && Math.abs((j % w) - x) <= 1) { seen[j] = 1; stack.push(j); } });
+      }
+      if (!best || n > best.n) best = { n, x0, y0, x1, y1 };
+    }
+    if (!best) return null;
+    // trim edges that are mostly background (bright patches of a table or wall can stick to the card)
+    const frac = (x0, y0, x1, y1) => { let n = 0, t = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { t++; n += bright[y * w + x]; } return n / Math.max(1, t); };
+    for (let k = 0; k < 4; k++) {
+      while (best.y1 - best.y0 > 20 && frac(best.x0, best.y0, best.x1, best.y0) < 0.6) best.y0++;
+      while (best.y1 - best.y0 > 20 && frac(best.x0, best.y1, best.x1, best.y1) < 0.6) best.y1--;
+      while (best.x1 - best.x0 > 20 && frac(best.x0, best.y0, best.x0, best.y1) < 0.6) best.x0++;
+      while (best.x1 - best.x0 > 20 && frac(best.x1, best.y0, best.x1, best.y1) < 0.6) best.x1--;
+    }
+    const area = (best.x1 - best.x0) * (best.y1 - best.y0);
+    if (area < 0.12 * w * h || area > 0.97 * w * h) return null;       // no clear card: use the whole photo
+    const f = (src.naturalWidth || src.width) / w, pad = 0.015 * Math.max(w, h);
+    const x = Math.max(0, best.x0 - pad), y = Math.max(0, best.y0 - pad);
+    return { x: x * f, y: y * f, w: (Math.min(w, best.x1 + pad) - x) * f, h: (Math.min(h, best.y1 + pad) - y) * f };
+  }
+
+  // Crop, rotate (0/90/180/270) and stretch the contrast, so dim photos become black text on white.
+  function prepare(src, box, angle, maxSide, border) {
+    border = border == null ? 24 : border;
+    const bw = box ? box.w : (src.naturalWidth || src.width), bh = box ? box.h : (src.naturalHeight || src.height);
+    const s = Math.min(2, maxSide / Math.max(bw, bh));
+    const rot = angle % 180 !== 0;
+    const c = document.createElement('canvas');
+    c.width = Math.round((rot ? bh : bw) * s) + 2 * border; c.height = Math.round((rot ? bw : bh) * s) + 2 * border;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.translate(c.width / 2, c.height / 2); ctx.rotate(angle * Math.PI / 180);
+    ctx.drawImage(src, box ? box.x : 0, box ? box.y : 0, bw, bh, -bw * s / 2, -bh * s / 2, bw * s, bh * s);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
+    const g = new Uint8Array(c.width * c.height);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    const hist = new Array(256).fill(0); g.forEach(v => hist[v]++);
+    let lo = 0, hi = 255, acc = 0;
+    for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > g.length * 0.01) { lo = i; break; } }
+    acc = 0; for (let i = 255; i >= 0; i--) { acc += hist[i]; if (acc > g.length * 0.15) { hi = i; break; } }   // paper = top 15%
+    const span = Math.max(30, hi - lo);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) {
+      const v = Math.max(0, Math.min(255, (g[j] - lo) * 255 / span));
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    // local threshold (Bradley): uneven light, shadows and grey paper become clean black text on white
+    {
+      const W = c.width, H = c.height, I = new Float64Array((W + 1) * (H + 1));
+      for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += d[(y * W + x) * 4]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } }
+      const r = Math.max(8, Math.round(Math.max(W, H) / 32)), out = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) {
+        const y0 = Math.max(0, y - r), y1 = Math.min(H - 1, y + r);
+        for (let x = 0; x < W; x++) {
+          const x0 = Math.max(0, x - r), x1 = Math.min(W - 1, x + r);
+          const n = (x1 - x0 + 1) * (y1 - y0 + 1);
+          const sum = I[(y1 + 1) * (W + 1) + x1 + 1] - I[y0 * (W + 1) + x1 + 1] - I[(y1 + 1) * (W + 1) + x0] + I[y0 * (W + 1) + x0];
+          out[y * W + x] = d[(y * W + x) * 4] * n < sum * 0.82 ? 0 : 255;
+        }
+      }
+      for (let j = 0; j < W * H; j++) d[j * 4] = d[j * 4 + 1] = d[j * 4 + 2] = out[j];
+    }
+    // whatever dark is connected to the edge is table or background, not text: paint it white
+    const W = c.width, H = c.height, st = [];
+    const dark = j => d[j * 4] < 140;
+    const push = j => { if (dark(j)) { d[j * 4] = d[j * 4 + 1] = d[j * 4 + 2] = 255; st.push(j); } };
+    for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+    for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+    while (st.length) {
+      const j = st.pop(), x = j % W;
+      if (x > 0) push(j - 1); if (x < W - 1) push(j + 1); if (j >= W) push(j - W); if (j < W * (H - 1)) push(j + W);
+    }
+    ctx.putImageData(im, 0, 0);
+    return c;
+  }
+
+  function rawLines(data, dx, dy) {
+    let lines = data.lines;
+    if (!lines && data.blocks) lines = data.blocks.flatMap(b => (b.paragraphs || []).flatMap(p => p.lines || []));
+    return (lines || []).map(l => ({ text: l.text.replace(/\s+/g, ' ').trim(), conf: l.confidence ?? 0,
+      x0: l.bbox.x0 + dx, y0: l.bbox.y0 + dy, x1: l.bbox.x1 + dx, y1: l.bbox.y1 + dy }));
+  }
+  const goodLine = l => l.conf >= 60 && (l.text.match(/[\p{L}\d]/gu) || []).length >= 2 && /[\p{L}\d]{2}/u.test(l.text);
+
+  // Merge readings of the whole card and of its halves: where two lines cover the same spot, keep the surer one.
+  function merge(lists) {
+    const all = lists.flatMap((l, i) => l.map(x => Object.assign({ pass: i ? 1 : 0 }, x))).filter(goodLine)
+      .sort((a, b) => a.pass - b.pass || b.conf - a.conf || b.text.length - a.text.length);
+    const kept = [];
+    all.forEach(l => {
+      const area = (l.x1 - l.x0) * (l.y1 - l.y0);
+      const clash = kept.some(k => {
+        const ix = Math.max(0, Math.min(k.x1, l.x1) - Math.max(k.x0, l.x0)), iy = Math.max(0, Math.min(k.y1, l.y1) - Math.max(k.y0, l.y0));
+        return ix * iy > 0.4 * Math.min(area, (k.x1 - k.x0) * (k.y1 - k.y0));
+      });
+      if (!clash) kept.push(l);
+    });
+    return kept.sort((a, b) => (Math.abs(a.y0 - b.y0) < 0.5 * (a.y1 - a.y0) ? a.x0 - b.x0 : a.y0 - b.y0))
+      .map(l => ({ text: l.text, h: l.y1 - l.y0, conf: l.conf }));
+  }
+
+  function crop(c, x, y, w, h) {
+    const o = document.createElement('canvas'); o.width = w + 32; o.height = h + 32;
+    const ctx = o.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, o.width, o.height);
+    ctx.drawImage(c, x, y, w, h, 16, 16, w, h); return o;
+  }
+
+  // How "readable" a result is: confident words of 3+ letters, plus emails and phone numbers.
+  function score(data) {
+    const words = data.words || (data.lines || []).flatMap(l => l.words || []);
+    let s = 0;
+    words.forEach(wd => { if (wd.confidence > 70 && /[\p{L}]{3,}/u.test(wd.text)) s += wd.text.length; });
+    const t = data.text || '';
+    if (/@[\w-]+\.\w{2,}/.test(t)) s += 20;
+    if (/\+?\d[\d ()-]{7,}\d/.test(t)) s += 10;
+    return s;
+  }
+
+  async function read(worker, img, onStep) {
+    const step = onStep || (() => {});
+    const box = findCard(img);
+    const w = box ? box.w : (img.naturalWidth || img.width), h = box ? box.h : (img.naturalHeight || img.height);
+    // Cards are wider than tall: a tall crop means the photo was taken sideways.
+    const angles = h > w * 1.1 ? [90, 270] : [0, 180];
+    await worker.setParameters({ tessedit_pageseg_mode: String((read.opts && read.opts.psm) || 11) });   // sparse text: business cards are not paragraphs
+    let best = null;
+    for (const a of angles) {
+      step('Reading the text…');
+      const c = prepare(img, box, a, 1200);
+      const { data } = await worker.recognize(c);
+      const sc = score(data);
+      if (!best || sc > best.score) best = { angle: a, score: sc, data };
+      if (sc > 60) break;                                          // clearly the right way up: skip the other side
+    }
+    // read the winner again at full size
+    const c = prepare(img, box, best.angle, (read.opts && read.opts.size) || 1600);
+    const { data } = await worker.recognize(c);
+    const found = rawLines(data, 0, 0).filter(goodLine);
+    // small text next to a big logo is often skipped: read the inked areas that nothing was found in
+    const extra = [];
+    for (const r of uncovered(c, found).slice(0, 6)) {
+      step('Reading the text… (details)');
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      const res = await worker.recognize(crop(c, r.x, r.y, r.w, r.h));
+      extra.push(rawLines(res.data, r.x - 16, r.y - 16));
+    }
+    await worker.setParameters({ tessedit_pageseg_mode: '11' });
+    return { lines: merge([found].concat(extra)), angle: best.angle, cropped: !!box, canvas: c };
+  }
+
+  // Areas with ink (text) that no found line covers. Logos (very tall areas) and specks are ignored.
+  function uncovered(c, found) {
+    const f = 600 / c.width, w = 600, h = Math.round(c.height * f);
+    const sm = document.createElement('canvas'); sm.width = w; sm.height = h;
+    sm.getContext('2d').drawImage(c, 0, 0, w, h);
+    const g = gray(sm.getContext('2d'), w, h);
+    const ink = new Uint8Array(w * h); g.forEach((v, i) => ink[i] = v < 110 ? 1 : 0);
+    // blank out what was already read
+    found.forEach(l => {
+      for (let y = Math.max(0, Math.floor(l.y0 * f) - 2); y < Math.min(h, Math.ceil(l.y1 * f) + 2); y++)
+        for (let x = Math.max(0, Math.floor(l.x0 * f) - 2); x < Math.min(w, Math.ceil(l.x1 * f) + 2); x++) ink[y * w + x] = 0;
+    });
+    // join letters into words and lines: smear sideways
+    const r = 12, m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) { let last = -1e9; for (let x = 0; x < w; x++) { if (ink[y * w + x]) last = x; if (x - last <= r) m[y * w + x] = 1; } }
+    for (let y = 0; y < h; y++) { let last = 1e9; for (let x = w - 1; x >= 0; x--) { if (ink[y * w + x]) last = x; if (last - x > r && m[y * w + x] && !ink[y * w + x]) { let near = false; for (let k = 1; k <= r && x - k >= 0; k++) if (ink[y * w + x - k]) { near = true; break; } if (!near) m[y * w + x] = 0; } } }
+    const seen = new Uint8Array(w * h), boxes = [];
+    for (let s = 0; s < w * h; s++) {
+      if (!m[s] || seen[s]) continue;
+      let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0; const st = [s]; seen[s] = 1;
+      while (st.length) {
+        const i = st.pop(), x = i % w, y = (i / w) | 0; n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        for (const j of [i - 1, i + 1, i - w, i + w]) if (j >= 0 && j < w * h && m[j] && !seen[j] && Math.abs((j % w) - x) <= 1) { seen[j] = 1; st.push(j); }
+      }
+      const bh = y1 - y0 + 1, bw = x1 - x0 + 1;
+      if (bh < 5 || bw < 12 || n < 40) continue;            // specks
+      if (bh > h * 0.22) continue;                          // logos and pictures
+      if (x0 <= 1 || y0 <= 1 || x1 >= w - 2 || y1 >= h - 2) { if (bw > w * 0.5 || bh > h * 0.5) continue; }   // table edges
+      boxes.push({ x0, y0, x1, y1, n });
+    }
+    // neighbouring lines become one block
+    boxes.sort((a, b) => a.y0 - b.y0);
+    const blocks = [];
+    boxes.forEach(b => {
+      const t = blocks.find(k => b.y0 - k.y1 < 14 && Math.min(k.x1, b.x1) - Math.max(k.x0, b.x0) > -10);
+      if (t) { t.x0 = Math.min(t.x0, b.x0); t.y0 = Math.min(t.y0, b.y0); t.x1 = Math.max(t.x1, b.x1); t.y1 = Math.max(t.y1, b.y1); t.n += b.n; }
+      else blocks.push(Object.assign({}, b));
+    });
+    return blocks.sort((a, b) => b.n - a.n).map(b => {
+      const pad = 6;
+      const x = Math.max(0, (b.x0 - pad) / f), y = Math.max(0, (b.y0 - pad) / f);
+      return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.min(c.width, (b.x1 + pad) / f) - x), h: Math.round(Math.min(c.height, (b.y1 + pad) / f) - y) };
+    });
+  }
+
+  root.CardScan = { read, findCard, prepare, uncovered, crop, rawLines };
+})(typeof window !== 'undefined' ? window : globalThis);

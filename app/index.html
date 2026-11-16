@@ -150,7 +150,10 @@
         <input type="file" id="scanInput" accept="image/*" hidden>
       </label>
       <p class="muted small" id="scanStatus" style="margin:0 0 4px">Reads the text on your phone. Nothing is sent to other services.</p>
-      <details id="scanTextBox" hidden style="margin:4px 0 6px"><summary class="small" style="cursor:pointer;color:var(--primary)">Text found on the card</summary><pre id="scanText" class="small" style="white-space:pre-wrap;background:#f9fafb;padding:8px;border-radius:8px;margin:6px 0 0"></pre></details>
+      <details id="scanTextBox" hidden style="margin:4px 0 6px"><summary class="small" style="cursor:pointer;color:var(--primary)">Text found on the card</summary>
+        <div class="chips" id="scanLines" style="margin-top:6px"></div>
+        <div id="lineTargets" hidden style="margin-top:8px;padding:8px;background:#f3f4f6;border-radius:10px"><div class="small muted" style="margin-bottom:6px">Put this line in:</div><div class="chips" id="lineTargetsBtns"></div></div>
+      </details>
       <h2 style="margin-top:12px">Contact</h2>
       <label for="aName">Name *</label>
       <input id="aName" autocomplete="off">
@@ -245,6 +248,11 @@
       </form>
     </div>
     <div class="panel">
+      <h2>Card scanner languages</h2>
+      <p class="small muted" style="margin:0 0 6px">English is always on. Add the languages of the cards you scan for better accents (é, ü, ø, ć). Each language makes reading a little slower and is downloaded once (1–3 MB).</p>
+      <div class="chips" id="ocrLangChips"></div>
+    </div>
+    <div class="panel">
       <h2>Follow-up email</h2>
       <p class="small muted" style="margin:0 0 6px">Used by the <b>Follow-up email</b> button on a contact. Placeholders:
         {firstName} {name} {company} {event} {atEvent} {myName} {myFirstName} {myTitle} {myCompany} {myPhone} {myEmail} {myCard}</p>
@@ -312,7 +320,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.7.1';
+const APP_VERSION = '2.8.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -631,7 +639,7 @@ function openAdd() {
   ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
   $('workPanel').hidden = true;
   $('scanStatus').textContent = 'Reads the text on your phone. Nothing is sent to other services.';
-  $('scanTextBox').hidden = true; $('scanTextBox').open = false;
+  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
   $('myNotes').value = ''; $('followDate').value = '';
   $('saveBtn').textContent = 'Add contact';
   renderChips();
@@ -771,38 +779,73 @@ function loadScript(src) {
     document.head.appendChild(s);
   }));
 }
-let ocrWorker = null;
+// Languages for the text reader: English always; others chosen in Settings (each adds a download of 1–3 MB).
+const OCR_LANGS = [['fra', 'French'], ['deu', 'German'], ['nld', 'Dutch'], ['nor', 'Norwegian'], ['pol', 'Polish'], ['hrv', 'Croatian']];
+const ocrLangs = () => ['eng'].concat(ls.get('ocrLangs', ['fra', 'deu']).filter(l => OCR_LANGS.some(x => x[0] === l)));
+let ocrWorker = null, ocrWorkerLangs = '';
 async function getOcr(progress) {
-  if (ocrWorker) return ocrWorker;
+  const langs = ocrLangs().join('+');
+  if (ocrWorker && ocrWorkerLangs === langs) return ocrWorker;
+  if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) {} ocrWorker = null; }
   await loadScript('ocr/tesseract.min.js');
   const base = new URL('ocr/', location.href).href;
-  ocrWorker = await Tesseract.createWorker('eng', 1, {
+  ocrWorker = await Tesseract.createWorker(langs.split('+'), 1, {
     workerPath: base + 'worker.min.js', corePath: base, langPath: base + 'lang', gzip: true, workerBlobURL: false,
-    logger: m => { if (m.status && /loading|initializ/.test(m.status) && m.progress < 1) progress('Preparing the text reader (first time only, about 7 MB)… ' + Math.round(m.progress * 100) + '%'); }
+    logger: m => { if (m.status && /loading|initializ/.test(m.status) && m.progress < 1) progress('Preparing the text reader (first time only)… ' + Math.round(m.progress * 100) + '%'); }
   });
+  ocrWorkerLangs = langs;
   return ocrWorker;
 }
 
-function toCanvas(src, max) {
+function loadImage(file) {
   return new Promise((res, rej) => {
     const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement('canvas'); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      res(c);
-    };
-    img.onerror = () => rej(new Error('This photo could not be read.'));
-    img.src = src;
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('This photo could not be read. Try a JPEG or PNG.'));
+    img.src = URL.createObjectURL(file);
   });
 }
 
-function linesOf(data) {
-  let lines = data.lines;
-  if (!lines && data.blocks) lines = data.blocks.flatMap(b => (b.paragraphs || []).flatMap(p => p.lines || []));
-  if (lines && lines.length) return lines.filter(l => (l.confidence ?? 100) > 30).map(l => ({ text: l.text, h: l.bbox ? l.bbox.y1 - l.bbox.y0 : 0 }));
-  return String(data.text || '').split(/\n+/).map(t => ({ text: t, h: 0 }));
+function qrFrom(img) {
+  const fn = window.jsQRmod && (window.jsQRmod.default || window.jsQRmod);
+  if (!fn) return '';
+  const s = Math.min(1, 1200 / Math.max(img.width, img.height));
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+  const hit = fn(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+  return hit && hit.data ? hit.data : '';
 }
+
+// Tap a recognised line, then the field it belongs in: fixes a wrong guess in two taps.
+const LINE_TARGETS = [['aName', 'Name'], ['aCompany', 'Company'], ['aTitle', 'Job title'], ['aEmail', 'Email'], ['aPhone', 'Phone'], ['aWebsite', 'Website'], ['myNotes', 'Notes']];
+let pickedLine = null;
+function renderScanLines(lines) {
+  const box = $('scanLines'); box.innerHTML = '';
+  pickedLine = null; $('lineTargets').hidden = true;
+  lines.forEach(t => {
+    const b = chip(t, false, '', () => {
+      box.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b && pickedLine !== t));
+      pickedLine = pickedLine === t ? null : t;
+      $('lineTargets').hidden = !pickedLine;
+    });
+    box.appendChild(b);
+  });
+}
+LINE_TARGETS.forEach(([id, label]) => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = '→ ' + label;
+  b.addEventListener('click', () => {
+    if (!pickedLine) return;
+    let v = pickedLine.replace(/^(tel|phone|mob|mobile|m|t|e|email|e-mail|w|web)[.:]*\s+/i, '');
+    if (id === 'aEmail') v = (v.match(/[^\s@]+@[^\s@]+\.[a-z]{2,}/i) || [v])[0];
+    if (id === 'aName') v = CardParse.nameCase(v);
+    if (id === 'myNotes') $(id).value = ($(id).value ? $(id).value + '\n' : '') + v;
+    else $(id).value = v;
+    $('lineTargets').hidden = true; pickedLine = null;
+    $('scanLines').querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+    toast(label + ' filled in');
+  });
+  $('lineTargetsBtns').appendChild(b);
+});
 
 $('scanInput').addEventListener('change', async e => {
   const file = e.target.files && e.target.files[0];
@@ -810,35 +853,36 @@ $('scanInput').addEventListener('change', async e => {
   if (!file || !current || !current.isNew) return;
   const status = t => { $('scanStatus').textContent = t; };
   const btn = $('scanBtn'); btn.classList.add('off'); btn.querySelector('span').textContent = 'Reading…';
+  const t0 = Date.now();
   try {
     const photo = await shrink(file);                       // also kept as a photo of the contact
     if (pendingPhotos.length < 6) { pendingPhotos.push(photo); renderPhotos(); }
-    const canvas = await toCanvas(photo, 1600);
+    const img = await loadImage(file);
     let qr = '';
-    try {
-      await loadScript('ocr/jsqr.min.js');
-      const fn = window.jsQRmod && (window.jsQRmod.default || window.jsQRmod);
-      const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-      const hit = fn && fn(d.data, canvas.width, canvas.height);
-      if (hit && hit.data) qr = hit.data;
-    } catch (err) { /* no QR reader: text only */ }
+    try { await loadScript('ocr/jsqr.min.js'); qr = qrFrom(img); } catch (err) { /* no QR reader: text only */ }
     await loadScript('ocr/parse.js');
     let lines = [];
     if (!/BEGIN:VCARD|^MECARD:/i.test(qr)) {
-      status('Reading the text…');
+      status('Finding the card…');
       const worker = await getOcr(status);
-      status('Reading the text…');
-      const { data } = await worker.recognize(canvas);
-      lines = linesOf(data);
+      await loadScript('ocr/scan.js');
+      const res = await CardScan.read(worker, img, status);
+      lines = res.lines;
     }
+    URL.revokeObjectURL(img.src);
     const r = CardParse.parse({ lines, qr });
     const fill = (id, v) => { if (v) $(id).value = v; };
-    fill('aName', r.name); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
+    fill('aName', CardParse.nameCase(r.name || '')); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
     fill('aTitle', r.title); fill('aWebsite', r.website);
     $('aSource').value = 'badge';
-    $('scanText').textContent = r.source === 'qr' ? 'QR code: ' + qr : lines.map(l => l.text.trim()).filter(Boolean).join('\n') || '(no text found)';
-    $('scanTextBox').hidden = false;
-    status(r.name || r.email ? 'Done. Please check the details: the text reader can make mistakes.' : 'No contact details recognised. Try a sharper photo, straight above the card, or type them in.');
+    const texts = r.source === 'qr'
+      ? qr.split(/\r?\n|;(?=[A-Z]+:)/).filter(l => l && !/^(BEGIN|END|VERSION|MECARD|N|PRODID|REV|UID)[:;]/i.test(l)).map(l => l.replace(/^[A-Z-]+(;[^:]*)?:/i, '').replace(/;+/g, ' ').trim()).filter(l => l && !/^(TEL|ADR|EMAIL|URL|ORG|TITLE|FN|NOTE|CELL|WORK|HOME|VOICE|FAX|PREF|INTERNET|TYPE|[ ,=])+$/i.test(l))
+      : lines.map(l => l.text.trim()).filter(Boolean);
+    renderScanLines(texts);
+    $('scanTextBox').hidden = !texts.length; $('scanTextBox').open = true;
+    const secs = Math.round((Date.now() - t0) / 1000);
+    status(r.name || r.email ? 'Done in ' + secs + ' s. Check the details. Wrong field? Tap a line below, then the field it belongs in.'
+      : 'No contact details recognised. Tap the lines below to fill in the fields, or try a sharper photo.');
   } catch (err) { status(err.message); }
   btn.classList.remove('off'); btn.querySelector('span').textContent = 'Scan another card';
 });
@@ -1039,8 +1083,18 @@ async function pushState() {
   return { supported: true, reg, sub, permission: Notification.permission };
 }
 
+function renderOcrLangs() {
+  const box = $('ocrLangChips'); box.innerHTML = '';
+  const on = ls.get('ocrLangs', ['fra', 'deu']);
+  OCR_LANGS.forEach(([code, label]) => box.appendChild(chip(label, on.includes(code), '', () => {
+    const now = ls.get('ocrLangs', ['fra', 'deu']);
+    ls.set('ocrLangs', now.includes(code) ? now.filter(x => x !== code) : now.concat(code));
+    renderOcrLangs();
+  })));
+}
 async function openSettings() {
   show('vSettings');
+  renderOcrLangs();
   $('appVersion').textContent = 'App version ' + APP_VERSION + (me && me.name ? ' · signed in as ' + me.name : '');
   fillFuForm();
   renderEvents(); editEvent(null);

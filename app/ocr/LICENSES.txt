@@ -1,6 +1,6 @@
 Third-party files in this folder (all run on the phone; images are not sent anywhere):
 - tesseract.min.js, worker.min.js — Tesseract.js 5.1.1, Apache License 2.0, https://github.com/naptha/tesseract.js
 - tesseract-core-*.wasm.js — tesseract.js-core 5, Apache License 2.0 (Tesseract OCR, Apache 2.0)
-- lang/eng.traineddata.gz — Tesseract English model (tessdata, 4.0.0_best_int), Apache License 2.0
+- lang/*.traineddata.gz — Tesseract language models (tessdata 4.0.0_best_int), Apache License 2.0
 - jsqr.min.js — jsQR 1.4.0, Apache License 2.0, https://github.com/cozmo/jsQR
-- parse.js — own code (business card text to contact fields)
+- scan.js, parse.js — own code (find and straighten the card, read it, turn the text into contact fields)
