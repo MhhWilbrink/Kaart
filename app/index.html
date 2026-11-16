@@ -74,6 +74,17 @@
   .danger { color:#b91c1c !important; border-color:#fecaca !important; }
   .evrow { display:flex; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
   .evrow:first-child { border-top:0; }
+  .rsec { background:var(--card); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .rsec h2 { font-size:1rem; margin:0 0 10px; }
+  .rgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .rnum { background:var(--bg, #f4f6f8); border-radius:10px; padding:10px; }
+  .rnum b { display:block; font-size:1.4rem; }
+  .rtab { width:100%; border-collapse:collapse; font-size:.9rem; }
+  .rtab td, .rtab th { text-align:left; padding:6px 4px; border-top:1px solid var(--line); vertical-align:top; }
+  .rtab th { font-weight:600; color:var(--muted); font-size:.8rem; border-top:0; }
+  .rc { border-top:1px solid var(--line); padding:10px 0; }
+  .rc:first-of-type { border-top:0; }
+  .rc .notes { white-space:pre-wrap; font-size:.9rem; margin-top:4px; }
   .evrow .info { flex:1; min-width:0; }
   .evrow .info b { display:block; font-weight:600; }
   .evrow .count { color:var(--muted); font-size:.8rem; }
@@ -176,7 +187,7 @@
       <input type="search" id="q" placeholder="Search name or company" autocomplete="off" aria-label="Search name or company">
     </div>
     <div class="filters" id="filters"></div>
-    <div class="listbar"><span id="count"></span><button class="linkbtn" id="exportBtn" type="button">Export</button></div>
+    <div class="listbar"><span id="count"></span><span><button class="linkbtn" id="reportBtn" type="button" hidden>Report</button><button class="linkbtn" id="exportBtn" type="button" style="margin-left:14px">Export</button></span></div>
     <div id="list"></div>
     </div>
   </section>
@@ -292,6 +303,16 @@
           <div><label for="evStart">First day</label><input type="date" id="evStart"></div>
           <div><label for="evEnd">Last day</label><input type="date" id="evEnd"></div>
         </div>
+        <div id="evLeadRow" hidden>
+          <label for="evLead">Event lead</label>
+          <select id="evLead"></select>
+          <p class="small muted" style="margin:4px 0 0">The lead and administrators edit this event and see the team report.</p>
+          <label>Team at this event</label>
+          <div class="chips" id="evTeam"></div>
+        </div>
+        <label for="evTypes">Organisation types</label>
+        <input id="evTypes" placeholder="e.g. B2G, B2B, Suppliers" maxlength="300" autocomplete="off">
+        <p class="small muted" style="margin:4px 0 0">Contacts at this event can get one of these types. Separate with commas.</p>
         <div class="actions">
           <button class="btn" id="evSave" type="submit">Save event</button>
           <button class="btn ghost" id="evCancel" type="button" hidden>Cancel</button>
@@ -359,6 +380,23 @@
       <button class="btn ghost" id="signOut" style="width:100%">Sign out on this device</button>
     </div>
   </section>
+
+  <section id="vReport" hidden>
+    <header>
+      <button class="iconbtn" id="backBtn3">Back</button>
+      <h1 id="rTitle" style="font-size:1.1rem">Report</h1>
+    </header>
+    <div class="panel">
+      <div id="rScopeRow"><label>Contacts</label><div class="chips" id="rScope"></div></div>
+      <label>Report</label><div class="chips" id="rVariant"></div>
+      <div id="rTypeRow"><label>Organisation type</label><div class="chips" id="rType"></div></div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn" id="rPdf" type="button">Share PDF</button>
+        <button class="btn ghost" id="rMail" type="button">Email</button>
+      </div>
+    </div>
+    <div id="rBody"></div>
+  </section>
 </div>
 
 <div class="savebar" id="saveBar" hidden>
@@ -393,7 +431,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.13.0';
+const APP_VERSION = '2.14.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -432,6 +470,7 @@ let events = ls.get('ownerEvents', []);
 let listMode = 'contacts';                  // 'contacts' or 'tasks' (the Follow-ups tab)
 let taskFilter = '';                        // event id shown in the Follow-ups tab ('' = all)
 let me = ls.get('ownerMe', null);
+let people = ls.get('ownerPeople', []);      // everyone in the team (for event leads and teams)
 let picks = ls.get('ownerPicks', { team: [], mine: null });   // quick-pick sets: team (by administrators) and your own           // your own card details and follow-up template
 let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
 let current = null;       // contact being edited, or {isNew:true}
@@ -607,7 +646,7 @@ async function flushPhotos() {
 
 /* ---------- views ---------- */
 function show(view) {
-  ['vLogin', 'vList', 'vDetail', 'vSettings'].forEach(v => $(v).hidden = v !== view);
+  ['vLogin', 'vList', 'vDetail', 'vSettings', 'vReport'].forEach(v => $(v).hidden = v !== view);
   $('saveBar').hidden = view !== 'vDetail';
   $('addBar').hidden = view !== 'vList';
   window.scrollTo(0, 0);
@@ -619,6 +658,7 @@ function route() {
   if (h.startsWith('#c=')) return openContact(decodeURIComponent(h.slice(3)));
   if (h === '#add') return openAdd();
   if (h === '#settings') return openSettings();
+  if (h.startsWith('#report=')) return openReport(decodeURIComponent(h.slice(8)));
   listMode = h === '#followups' ? 'tasks' : 'contacts';
   renderList(); show('vList');
 }
@@ -686,6 +726,7 @@ function renderList() {
   const searching = $('q').value.trim();
   $('count').textContent = contacts.length ? shown.length + (shown.length === 1 ? ' contact' : ' contacts') : '';
   $('exportBtn').hidden = !shown.length;
+  $('reportBtn').hidden = !events.some(e => e.id === filter);
   if (!contacts.length) { list.innerHTML = `<div class="empty">No contacts yet.<br>They appear here as soon as someone shares their details.</div>`; return; }
   if (!shown.length) { list.innerHTML = `<div class="empty">${searching ? 'No contacts match your search.' : 'No contacts in this selection.'}</div>`; return; }
   const pend = pendingIds();
@@ -831,7 +872,8 @@ $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeo
 async function refresh(silent) {
   if (!navigator.onLine) { renderBanner(); return; }
   try {
-    const [fresh, evs, who, qp] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null), api('quickPicks').catch(() => null)]);
+    const [fresh, evs, who, qp, ppl] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null), api('quickPicks').catch(() => null), api('people').catch(() => null)]);
+    if (Array.isArray(ppl)) { people = ppl; ls.set('ownerPeople', people); }
     if (qp && Array.isArray(qp.team)) { picks = qp; ls.set('ownerPicks', picks); }
     if (Array.isArray(evs)) { events = evs; ls.set('ownerEvents', events); }
     if (who && who.profile) { me = who; ls.set('ownerMe', me); }
@@ -865,9 +907,25 @@ const allSets = () => (picks.team || []).map(g => Object.assign({ team: true }, 
 const pickTag = (g, o) => g.name + ': ' + o;
 // older contacts have plain answers ("Send datasheet") from before the sets existed
 const pickOn = (g, o, tags) => tags.has(pickTag(g, o)) || tags.has(o);
+const TYPE_SET = 'Organisation type', TYPE_PREFIX = TYPE_SET + ': ';
+const typeOf = c => { const t = (c.tags || []).find(x => x.startsWith(TYPE_PREFIX)); return t ? t.slice(TYPE_PREFIX.length) : ''; };
 function setsFor(c) {
-  const evIds = (c && !c.isNew ? eventsOf(c) : eventsOf({ time: new Date().toISOString() })).map(e => e.id);
-  return allSets().filter(g => !g.events || !g.events.length || g.events.some(id => evIds.includes(id)));
+  const evs = c && !c.isNew ? eventsOf(c) : eventsOf({ time: new Date().toISOString() });
+  const evIds = evs.map(e => e.id);
+  // the event's organisation types (B2G, B2B, …) come first, as a one-answer set
+  const types = [];
+  evs.forEach(e => (e.types || []).forEach(t => { if (!types.includes(t)) types.push(t); }));
+  const has = form && [...form.tags].find(t => t.startsWith(TYPE_PREFIX));
+  if (has && !types.includes(has.slice(TYPE_PREFIX.length))) types.push(has.slice(TYPE_PREFIX.length));
+  const typeSet = types.length ? [{ id: '_type', name: TYPE_SET, options: types, multi: false, isType: true }] : [];
+  return typeSet.concat(allSets().filter(g => !g.events || !g.events.length || g.events.some(id => evIds.includes(id))));
+}
+// a hint from earlier contacts at the same organisation ("Other contacts at Damen: B2B")
+function typeHint() {
+  const co = (current && current.isNew ? $('aCompany').value : current && companyOf(current) ? companyOf(current).text : '').trim().toLowerCase();
+  if (!co) return '';
+  const other = contacts.find(x => x !== current && typeOf(x) && (companyOf(x) || {}).text && companyOf(x).text.trim().toLowerCase() === co);
+  return other ? 'Other contacts at ' + companyOf(other).text + ': ' + typeOf(other) : '';
 }
 function renderPicks() {
   const box = $('pickPanels'); box.innerHTML = '';
@@ -883,7 +941,12 @@ function renderPicks() {
       if (!was && g.task && addTask(o, todayStr(7))) toast('Follow-up added: ' + o + ' (in 1 week)');
       renderChips();
     })));
-    panel.appendChild(row); box.appendChild(panel);
+    panel.appendChild(row);
+    if (g.isType && !g.options.some(o => pickOn(g, o, form.tags)) && typeHint()) {
+      const h = document.createElement('p'); h.className = 'small muted'; h.style.margin = '8px 0 0'; h.textContent = typeHint();
+      panel.appendChild(h);
+    }
+    box.appendChild(panel);
   });
 }
 const tagLabel = t => (t.includes(': ') ? t.slice(t.indexOf(': ') + 2) : t);
@@ -1397,14 +1460,14 @@ $('exportBtn').addEventListener('click', async () => {
   if (!rows.length) return;
   const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   const sets = allSets();
-  const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Lead'].concat(sets.map(g => g.name))
+  const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Lead', TYPE_SET].concat(sets.map(g => g.name))
     .concat(['Other tags', 'Next follow-up', 'Open follow-ups', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by']);
   const lines = [head].concat(rows.map(c => {
     const d = new Date(c.time), tags = new Set(c.tags || []);
-    const known = new Set(TEMPS);
+    const known = new Set(TEMPS.concat([...tags].filter(t => t.startsWith(TYPE_PREFIX))));
     const answers = sets.map(g => g.options.filter(o => pickOn(g, o, tags)).map(o => { known.add(pickTag(g, o)); known.add(o); return o; }).join(', '));
     return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.title), clean(c.email), clean(c.phone), clean(c.website),
-      eventsOf(c).map(e => e.name).join(', '), [...tags].filter(t => TEMPS.includes(t)).join(', ')].concat(answers)
+      eventsOf(c).map(e => e.name).join(', '), [...tags].filter(t => TEMPS.includes(t)).join(', '), typeOf(c)].concat(answers)
       .concat([[...tags].filter(t => !known.has(t)).map(tagLabel).join(', '),
       c.followUp || '', tasksOf(c).filter(t => !t.done).map(t => (t.due ? t.due + ' ' : '') + t.text).join(' | '), clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me']);
   })).map(r => r.map(cell).join(';'));
@@ -1424,25 +1487,278 @@ $('exportBtn').addEventListener('click', async () => {
   toast('Exported ' + rows.length + (rows.length === 1 ? ' contact' : ' contacts'));
 });
 
+/* ---------- event report (beursverslag): built on the phone, shared as PDF or email ---------- */
+let rep = null;                       // { ev, scope, variant, type, data, r }
+let pdfReady = null, pdfFonts = null;
+function loadPdfLib() {
+  if (!pdfReady) pdfReady = (async () => {
+    await loadScript('report/jspdf.umd.min.js');
+    await loadScript('report/jspdf.plugin.autotable.min.js');
+    const font = async f => {
+      const b = new Uint8Array(await (await fetch('report/' + f)).arrayBuffer());
+      let str = ''; for (let i = 0; i < b.length; i += 8192) str += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+      return btoa(str);
+    };
+    pdfFonts = { reg: await font('DejaVuSans.ttf'), bold: await font('DejaVuSans-Bold.ttf') };   // accents such as ć, ł, ø
+  })().catch(e => { pdfReady = null; throw e; });
+  return pdfReady;
+}
+const inEvent = (c, ev) => { const d = localDate(c.time); return d && d >= ev.start && d <= ev.end; };
+const leadOf = c => TEMPS.find(t => (c.tags || []).includes(t)) || '';
+const orgOf = c => { const co = companyOf(c); return co ? co.text : ''; };
+const metAgain = c => (clean(c.myNotes).match(/^— .* —$/gm) || []).length >= 2;
+// the notes of this event only (a contact met at several shows has one section per conversation)
+function notesFor(c, ev) {
+  const n = clean(c.myNotes).trim();
+  if (!/^— .* —$/m.test(n)) return n;
+  const parts = n.split(/^(?=— .* —$)/m).map(p => p.trim()).filter(Boolean);
+  const mine = parts.filter(p => (/^— (.*) —$/m.exec(p) || [])[1] && /^— (.*) —$/m.exec(p)[1].includes(ev.name));
+  return (mine.length ? mine : parts).join('\n\n');
+}
+const countLine = obj => Object.entries(obj).map(([k, v]) => k + ' ' + v).join(' · ');
+
+function openReport(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) { location.hash = ''; return; }
+  if (!rep || rep.ev.id !== id) rep = { ev, scope: 'mine', variant: 'full', type: '' };
+  rep.ev = ev;
+  $('rTitle').textContent = ev.name;
+  show('vReport');
+  loadPdfLib().catch(() => {});        // ready before the Share button is tapped (iPhone needs that)
+  loadReport();
+}
+async function loadReport() {
+  renderReportControls();
+  rep.data = null; rep.r = null;
+  if (rep.scope === 'team') {
+    $('rBody').innerHTML = '<p class="muted small">Loading the team report…</p>';
+    if (!navigator.onLine) { $('rBody').innerHTML = '<div class="empty">The team report needs a connection.</div>'; return; }
+    try { rep.data = await api('eventReport', { id: rep.ev.id, scope: 'team' }); }
+    catch (e) { $('rBody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  } else {
+    // your own contacts are on this phone already (also offline, including changes not synced yet)
+    rep.data = { event: rep.ev, scope: 'mine', people: [], contacts: contacts.filter(c => !c.ownerName) };
+  }
+  renderReport();
+}
+function renderReportControls() {
+  const ev = rep.ev;
+  const team = canTeamReport(ev) && people.length > 1;
+  $('rScopeRow').hidden = !team;
+  const sc = $('rScope'); sc.innerHTML = '';
+  [['mine', 'My contacts'], ['team', 'Whole team']].forEach(([v, l]) => sc.appendChild(chip(l, rep.scope === v, '', () => { if (rep.scope !== v) { rep.scope = v; loadReport(); } })));
+  const va = $('rVariant'); va.innerHTML = '';
+  [['full', 'Full'], ['summary', 'Summary (no names or notes)']].forEach(([v, l]) => va.appendChild(chip(l, rep.variant === v, '', () => { rep.variant = v; renderReportControls(); renderReport(); })));
+  const types = reportTypes();
+  $('rTypeRow').hidden = !types.length;
+  const ty = $('rType'); ty.innerHTML = '';
+  [['', 'All']].concat(types.map(t => [t, t]), types.length ? [['-', 'No type']] : []).forEach(([v, l]) => ty.appendChild(chip(l, rep.type === v, '', () => { rep.type = v; renderReportControls(); renderReport(); })));
+}
+function reportTypes() {
+  const ev = (rep.data && rep.data.event) || rep.ev;
+  const out = (ev.types || []).slice();
+  ((rep.data && rep.data.contacts) || []).filter(c => inEvent(c, ev)).forEach(c => { const t = typeOf(c); if (t && !out.includes(t)) out.push(t); });
+  return out;
+}
+
+function buildReport() {
+  const ev = rep.data.event || rep.ev, team = rep.data.scope === 'team', full = rep.variant === 'full';
+  const all = rep.data.contacts.filter(c => inEvent(c, ev));
+  const list = all.filter(c => !rep.type || (rep.type === '-' ? !typeOf(c) : typeOf(c) === rep.type))
+    .sort((x, y) => (x.time < y.time ? -1 : 1));
+  const by = (fn) => { const o = {}; list.forEach(c => { const k = fn(c); if (k) o[k] = (o[k] || 0) + 1; }); return o; };
+  const myName = (me && me.name) || 'Me';
+  const tasks = []; list.forEach(c => tasksOf(c).forEach(t => tasks.push({ t, c })));
+  const today = todayStr();
+  const open = tasks.filter(x => !x.t.done).sort((a, b) => ((a.t.due || '9999') < (b.t.due || '9999') ? -1 : 1));
+  const again = list.filter(metAgain).length;
+  const typeLabel = rep.type === '-' ? 'No organisation type' : rep.type ? rep.type + ' only' : '';
+  const figures = [
+    ['Contacts', String(list.length) + (rep.type ? ' (of ' + all.length + ' at this event)' : '')],
+    ['New / met more than once', (list.length - again) + ' / ' + again],
+    ['How collected', countLine(by(c => c.source === 'card' ? 'NFC card' : srcLabel(c.source || 'manual')))],
+    ['Per day', countLine(Object.fromEntries(Object.entries(by(c => localDate(c.time))).sort().map(([d, n]) => [new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), n])))]
+  ];
+  if (team) figures.push(['Per person', countLine(by(c => c.ownerName || myName))]);
+  figures.push(['Follow-ups', open.length + ' open' + (open.filter(x => x.t.due && x.t.due < today).length ? ' (' + open.filter(x => x.t.due && x.t.due < today).length + ' overdue)' : '') + ' · ' + tasks.filter(x => x.t.done).length + ' done']);
+  const leads = TEMPS.concat(['']).map(t => [t || 'No lead', list.filter(c => leadOf(c) === t).length]).filter(([l, n]) => n || l !== 'No lead');
+  const tnames = reportTypes().filter(t => !rep.type || rep.type === t);
+  const types = tnames.map(t => {
+    const cs = list.filter(c => typeOf(c) === t);
+    return [t, cs.length, [...new Set(cs.map(orgOf).filter(Boolean))].sort().join(', ')];
+  });
+  const untyped = list.filter(c => !typeOf(c));
+  if ((tnames.length && !rep.type) || rep.type === '-') if (untyped.length) types.push(['No type', untyped.length, [...new Set(untyped.map(orgOf).filter(Boolean))].sort().join(', ')]);
+  const who = c => c.ownerName || myName;
+  return {
+    ev, team, full, list,
+    title: ev.name,
+    subtitle: 'Event report · ' + fmtRange(ev),
+    meta: [team ? 'Whole team' : 'My contacts' + (me && me.name ? ' (' + me.name + ')' : ''), full ? 'Full' : 'Summary', typeLabel, 'made ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })].filter(Boolean).join(' · '),
+    figures, leads, types: tnames.length || rep.type ? types : [],
+    hot: list.filter(c => leadOf(c) === 'Hot').map(c => [clean(c.name), orgOf(c), typeOf(c)].concat(team ? [who(c)] : [])),
+    open: open.map(x => [x.t.due ? fmtDate(x.t.due) : 'No date', x.t.text, clean(x.c.name) + (orgOf(x.c) ? ', ' + orgOf(x.c) : '')].concat(team ? [who(x.c)] : [])),
+    contacts: list.map(c => ({
+      name: clean(c.name), title: clean(c.title), org: orgOf(c), email: clean(c.email), phone: clean(c.phone),
+      type: typeOf(c), lead: leadOf(c), again: metAgain(c), by: team ? who(c) : '',
+      notes: notesFor(c, ev), note: clean(c.note),
+      tags: (c.tags || []).filter(t => !TEMPS.includes(t) && !t.startsWith(TYPE_PREFIX)).map(tagLabel).join(', '),
+      open: tasksOf(c).filter(t => !t.done).map(t => (t.due ? fmtDate(t.due) + ': ' : '') + t.text)
+    }))
+  };
+}
+
+function renderReport() {
+  const r = rep.r = buildReport();
+  const rows = (head, body) => `<table class="rtab">${head ? '<tr>' + head.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>' : ''}${body.map(b => '<tr>' + b.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('')}</table>`;
+  let h = `<div class="rsec"><div class="muted small">${esc(r.subtitle)}</div><div class="small" style="margin-top:2px">${esc(r.meta)}</div></div>`;
+  if (!r.list.length) { $('rBody').innerHTML = h + '<div class="empty">No contacts in this selection.</div>'; return; }
+  h += `<div class="rsec"><h2>Key figures</h2>${rows(null, r.figures)}</div>`;
+  h += `<div class="rsec"><h2>Leads</h2><div class="rgrid">${r.leads.map(([l, n]) => `<div class="rnum"><b>${n}</b>${esc(l)}</div>`).join('')}</div>`
+    + (r.full && r.hot.length ? `<div style="margin-top:12px">${rows(['Hot', 'Organisation', 'Type'].concat(r.team ? ['By'] : []), r.hot)}</div>` : '') + '</div>';
+  if (r.types.length) h += `<div class="rsec"><h2>Organisation types</h2>${rows(['Type', 'Contacts', 'Organisations'], r.types)}</div>`;
+  h += `<div class="rsec"><h2>Open follow-ups</h2>${!r.open.length ? '<p class="small muted" style="margin:0">None.</p>' : r.full ? rows(['Due', 'Action', 'Contact'].concat(r.team ? ['By'] : []), r.open) : `<p class="small" style="margin:0">${r.open.length} open. Names are left out of the summary.</p>`}</div>`;
+  if (r.full) {
+    h += `<div class="rsec"><h2>Contacts (${r.contacts.length})</h2>` + r.contacts.map(c => `<div class="rc">
+      <b>${esc(c.name)}</b>${c.again ? ' <span class="badge">met more than once</span>' : ''}
+      <div class="small">${esc([c.title, c.org].filter(Boolean).join(' · '))}</div>
+      <div class="small muted">${esc([c.email, c.phone, c.type, c.lead, c.by ? 'by ' + c.by : ''].filter(Boolean).join(' · '))}</div>
+      ${c.tags ? `<div class="small muted">${esc(c.tags)}</div>` : ''}
+      ${c.notes ? `<div class="notes">${esc(c.notes)}</div>` : ''}
+      ${c.note ? `<div class="notes muted">Their note: ${esc(c.note)}</div>` : ''}
+      ${c.open.length ? `<div class="small" style="margin-top:4px">Follow-up: ${esc(c.open.join(' · '))}</div>` : ''}
+    </div>`).join('') + '</div>';
+  }
+  $('rBody').innerHTML = h;
+}
+
+function reportText(r) {
+  const L = ['EVENT REPORT: ' + r.title, r.subtitle.replace('Event report · ', ''), r.meta, '', 'KEY FIGURES'];
+  r.figures.forEach(([k, v]) => L.push(k + ': ' + v));
+  L.push('', 'LEADS', r.leads.map(([l, n]) => l + ' ' + n).join(' · '));
+  if (r.full && r.hot.length) r.hot.forEach(x => L.push('- Hot: ' + x.filter(Boolean).join(', ')));
+  if (r.types.length) { L.push('', 'ORGANISATION TYPES'); r.types.forEach(([t, n, o]) => L.push(t + ' (' + n + ')' + (o ? ': ' + o : ''))); }
+  L.push('', 'OPEN FOLLOW-UPS');
+  if (!r.open.length) L.push('None.'); else if (r.full) r.open.forEach(x => L.push('- ' + x[0] + ': ' + x[1] + ' – ' + x.slice(2).join(', '))); else L.push(r.open.length + ' open.');
+  if (r.full) {
+    L.push('', 'CONTACTS');
+    r.contacts.forEach(c => {
+      L.push('', c.name + (c.title || c.org ? ' – ' + [c.title, c.org].filter(Boolean).join(', ') : ''));
+      const sub = [c.email, c.phone, c.type, c.lead, c.by ? 'by ' + c.by : '', c.again ? 'met more than once' : ''].filter(Boolean).join(' · ');
+      if (sub) L.push(sub);
+      if (c.tags) L.push(c.tags);
+      if (c.notes) L.push(c.notes);
+      if (c.note) L.push('Their note: ' + c.note);
+      if (c.open.length) L.push('Follow-up: ' + c.open.join(' · '));
+    });
+  }
+  return L.join('\n');
+}
+
+function makePdf(r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  doc.addFileToVFS('DejaVu.ttf', pdfFonts.reg); doc.addFont('DejaVu.ttf', 'DejaVu', 'normal');
+  doc.addFileToVFS('DejaVuB.ttf', pdfFonts.bold); doc.addFont('DejaVuB.ttf', 'DejaVu', 'bold');
+  const M = 14, P = [10, 61, 98];
+  let y = 20;
+  doc.setFont('DejaVu', 'bold'); doc.setFontSize(18); doc.text(r.title, M, y); y += 7;
+  doc.setFont('DejaVu', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text(r.subtitle, M, y); y += 5; doc.text(doc.splitTextToSize(r.meta, 182), M, y); y += 9; doc.setTextColor(0);
+  const head = t => { if (y > 255) { doc.addPage(); y = 20; } doc.setFont('DejaVu', 'bold'); doc.setFontSize(12); doc.setTextColor(...P); doc.text(t, M, y); doc.setTextColor(0); y += 3; };
+  const table = o => { doc.autoTable(Object.assign({ startY: y, margin: { left: M, right: M, bottom: 18 }, theme: 'grid',
+    styles: { font: 'DejaVu', fontSize: 9, cellPadding: 1.8, lineColor: [225, 228, 232], lineWidth: 0.2, valign: 'top' },
+    headStyles: { font: 'DejaVu', fontStyle: 'bold', fillColor: P, textColor: 255 } }, o)); y = doc.lastAutoTable.finalY + 9; };
+  head('Key figures'); table({ body: r.figures, columnStyles: { 0: { cellWidth: 55, fontStyle: 'bold' } } });
+  head('Leads'); table({ head: [['Lead', 'Contacts']], body: r.leads.map(x => x.map(String)), columnStyles: { 1: { cellWidth: 30 } } });
+  if (r.full && r.hot.length) { head('Hot leads'); table({ head: [['Name', 'Organisation', 'Type'].concat(r.team ? ['By'] : [])], body: r.hot }); }
+  if (r.types.length) { head('Organisation types'); table({ head: [['Type', 'Contacts', 'Organisations']], body: r.types.map(x => x.map(String)), columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 22 } } }); }
+  head('Open follow-ups');
+  if (!r.open.length) table({ body: [['None.']] });
+  else if (r.full) table({ head: [['Due', 'Action', 'Contact'].concat(r.team ? ['By'] : [])], body: r.open, columnStyles: { 0: { cellWidth: 28 } } });
+  else table({ body: [[r.open.length + ' open. Names are left out of the summary.']] });
+  if (r.full && r.contacts.length) {
+    head('Contacts (' + r.contacts.length + ')');
+    table({ head: [['Contact', 'Type / lead', 'Notes and follow-ups']],
+      body: r.contacts.map(c => [
+        [c.name, c.title, c.org, c.email, c.phone, c.by ? 'By ' + c.by : ''].filter(Boolean).join('\n'),
+        [c.type, c.lead, c.again ? 'Met more than once' : '', c.tags].filter(Boolean).join('\n'),
+        [c.notes, c.note ? 'Their note: ' + c.note : '', c.open.length ? 'Follow-up: ' + c.open.join('; ') : ''].filter(Boolean).join('\n\n')
+      ]),
+      columnStyles: { 0: { cellWidth: 52 }, 1: { cellWidth: 32 } } });
+  }
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFont('DejaVu', 'normal'); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(r.title + (r.full ? ' · contains personal data, handle confidentially' : ''), M, 289);
+    doc.text(i + ' / ' + pages, 196, 289, { align: 'right' });
+  }
+  return doc.output('blob');
+}
+const reportFileName = r => 'Report ' + r.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() + (r.full ? '' : ' (summary)') + '.pdf';
+
+$('rPdf').addEventListener('click', async () => {
+  if (!rep || !rep.r || !rep.r.list.length) return toast('No contacts in this selection.');
+  if (!pdfFonts) {
+    toast('Preparing the PDF…');
+    try { await loadPdfLib(); } catch (e) { return toast('The PDF maker could not be loaded. Check your connection and try again.'); }
+  }
+  let file;
+  try { file = new File([makePdf(rep.r)], reportFileName(rep.r), { type: 'application/pdf' }); }
+  catch (e) { return toast('The PDF could not be made: ' + e.message); }
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: file.name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+});
+$('rMail').addEventListener('click', () => {
+  if (!rep || !rep.r || !rep.r.list.length) return toast('No contacts in this selection.');
+  const MAX = 6000;                    // mail apps cut very long links
+  let body = reportText(rep.r);
+  if (body.length > MAX) body = body.slice(0, MAX).replace(/\n[^\n]*$/, '') + '\n\n… shortened. Use Share PDF for the complete report.';
+  location.href = 'mailto:?subject=' + encodeURIComponent('Event report: ' + rep.r.title + (rep.r.full ? '' : ' (summary)')) + '&body=' + encodeURIComponent(body);
+});
+$('backBtn3').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = ''));
+$('reportBtn').addEventListener('click', () => { location.hash = 'report=' + encodeURIComponent(filter); });
+
 /* ---------- events (settings) ---------- */
-let editingEvent = null;
+let editingEvent = null, evTeamSel = new Set();
+const canManage = e => !e.lead || !!(me && (e.lead === me.id || me.role === 'admin'));
+const canTeamReport = e => !!(me && (e.lead === me.id || me.role === 'admin'));
 function renderEvents() {
   const box = $('evList');
   box.innerHTML = events.length ? '' : '<p class="small muted" style="margin:4px 0">No events yet.</p>';
   events.forEach(e => {
     const n = contacts.filter(c => eventsOf(c).some(x => x.id === e.id)).length;
     const row = document.createElement('div'); row.className = 'evrow';
-    row.innerHTML = `<div class="info"><b>${esc(e.name)}</b><span class="count">${esc(fmtRange(e))} · ${n} contact${n === 1 ? '' : 's'}</span></div>`;
-    const ed = document.createElement('button'); ed.className = 'iconbtn'; ed.type = 'button'; ed.textContent = 'Edit';
-    ed.addEventListener('click', () => editEvent(e));
-    const del = document.createElement('button'); del.className = 'iconbtn danger'; del.type = 'button'; del.textContent = 'Delete';
-    del.addEventListener('click', async () => {
-      if (!confirm('Delete the event "' + e.name + '"? The contacts stay.')) return;
-      try { await api('deleteEvent', { id: e.id }); events = events.filter(x => x.id !== e.id); ls.set('ownerEvents', events); renderEvents(); toast('Event deleted'); }
-      catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
-    });
-    row.append(ed, del); box.appendChild(row);
+    const extra = [e.leadName && people.length > 1 ? 'lead ' + e.leadName : '', (e.types || []).join(' / ')].filter(Boolean).join(' · ');
+    row.innerHTML = `<div class="info"><b>${esc(e.name)}</b><span class="count">${esc(fmtRange(e))} · ${n} contact${n === 1 ? '' : 's'}</span>${extra ? `<span class="count" style="display:block">${esc(extra)}</span>` : ''}</div>`;
+    const rp = document.createElement('button'); rp.className = 'iconbtn'; rp.type = 'button'; rp.textContent = 'Report';
+    rp.addEventListener('click', () => { location.hash = 'report=' + encodeURIComponent(e.id); });
+    row.appendChild(rp);
+    if (canManage(e)) {
+      const ed = document.createElement('button'); ed.className = 'iconbtn'; ed.type = 'button'; ed.textContent = 'Edit';
+      ed.addEventListener('click', () => editEvent(e));
+      const del = document.createElement('button'); del.className = 'iconbtn danger'; del.type = 'button'; del.textContent = 'Delete';
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete the event "' + e.name + '"? The contacts stay.')) return;
+        try { await api('deleteEvent', { id: e.id }); events = events.filter(x => x.id !== e.id); ls.set('ownerEvents', events); renderEvents(); toast('Event deleted'); }
+        catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+      });
+      row.append(ed, del);
+    }
+    box.appendChild(row);
   });
+}
+function renderEvTeam() {
+  const box = $('evTeam'); box.innerHTML = '';
+  people.forEach(p => box.appendChild(chip(p.name, evTeamSel.has(p.id), '', () => {
+    if (p.id === $('evLead').value) return toast('The lead is always on the team.');
+    evTeamSel.has(p.id) ? evTeamSel.delete(p.id) : evTeamSel.add(p.id); renderEvTeam();
+  })));
 }
 function editEvent(e) {
   editingEvent = e || null;
@@ -1451,15 +1767,33 @@ function editEvent(e) {
   $('evStart').value = e ? e.start : '';
   $('evEnd').value = e ? e.end : '';
   $('evCancel').hidden = !e;
+  const latest = events.find(x => (x.types || []).length);
+  $('evTypes').value = ((e ? e.types : latest && latest.types) || []).join(', ');
+  // lead and team: only when there is a team
+  const team = people.length > 1 && me;
+  $('evLeadRow').hidden = !team;
+  if (team) {
+    const lead = e ? e.lead || '' : me.id;
+    $('evLead').innerHTML = (e && !e.lead ? '<option value="">No lead</option>' : '') + people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    $('evLead').value = lead;
+    $('evLead').disabled = !!(e && e.lead && !canManage(e));
+    evTeamSel = new Set(e ? (e.members || []) : [me.id]);
+    if (lead) evTeamSel.add(lead);
+    renderEvTeam();
+  }
   if (e) $('evName').focus();
 }
+$('evLead').addEventListener('change', () => { if ($('evLead').value) evTeamSel.add($('evLead').value); renderEvTeam(); });
 $('evStart').addEventListener('change', () => { if (!$('evEnd').value || $('evEnd').value < $('evStart').value) $('evEnd').value = $('evStart').value; });
 $('evCancel').addEventListener('click', () => editEvent(null));
 $('evForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = $('evSave'); btn.disabled = true;
   try {
-    const saved = await api('saveEvent', { id: editingEvent ? editingEvent.id : '', name: $('evName').value.trim(), start: $('evStart').value, end: $('evEnd').value });
+    const data = { id: editingEvent ? editingEvent.id : '', name: $('evName').value.trim(), start: $('evStart').value, end: $('evEnd').value,
+      types: $('evTypes').value.split(/[,;\n]/).map(x => x.trim()).filter(Boolean) };
+    if (!$('evLeadRow').hidden) { data.lead = $('evLead').value; data.members = [...evTeamSel]; }
+    const saved = await api('saveEvent', data);
     events = events.filter(x => x.id !== saved.id).concat(saved).sort((x, y) => (y.start > x.start ? 1 : y.start < x.start ? -1 : 0));
     ls.set('ownerEvents', events);
     toast(editingEvent ? 'Event updated' : 'Event saved');
@@ -1663,7 +1997,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 function signOutLocal() {
   token = null;
-  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe'); ls.del('ownerPicks'); photoQueue = []; savePhotoQueue();
+  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe'); ls.del('ownerPicks'); ls.del('ownerPeople'); photoQueue = []; savePhotoQueue();
   idbSet('token', null);
   contacts = []; events = []; filter = '';
   location.hash = '';

@@ -1,0 +1,7 @@
+Third-party files in this folder (used to make the event report PDF on the phone)
+
+jspdf.umd.min.js               jsPDF 2.5.2, MIT licence, https://github.com/parallax/jsPDF
+jspdf.plugin.autotable.min.js  jsPDF-AutoTable 3.8.4, MIT licence, https://github.com/simonbengtsson/jsPDF-AutoTable
+DejaVuSans.ttf, DejaVuSans-Bold.ttf
+                               DejaVu Sans fonts, reduced to Latin characters. Bitstream Vera / DejaVu licence
+                               (free to use, modify and redistribute), https://dejavu-fonts.github.io/License.html
