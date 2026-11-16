@@ -28,6 +28,18 @@
   const orgLevel = s => { const i = ORG.findIndex(rx => rx.test(s)); return i < 0 ? 99 : i; };
 
   // "ROBERTO KRAMARIC" -> "Roberto Kramaric", "Raphaël BOURDON" -> "Raphaël Bourdon", particles stay small
+  // "jan-van-der-berg-1a2b3c4" -> "Jan van der Berg"; company pages and one-word handles give nothing
+  function linkedinName(url) {
+    const m = /linkedin\.com\/in\/([^/?#\s]+)/i.exec(url);
+    if (!m) return '';
+    let slug = m[1];
+    try { slug = decodeURIComponent(slug); } catch (e) { /* keep as is */ }
+    const words = slug.toLowerCase().split(/[-_.]+/).filter(Boolean);
+    while (words.length && (/\d/.test(words[words.length - 1]) || /^[0-9a-f]{6,}$/.test(words[words.length - 1]))) words.pop();
+    if (words.length < 2 || words.some(w => /\d/.test(w)) || words.length > 6) return '';
+    return words.map((w, i) => (i > 0 && i < words.length - 1 && PARTICLE.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+  }
+
   function nameCase(s) {
     return s.split(' ').map((w, i) => {
       if (i > 0 && PARTICLE.test(w)) return w.toLowerCase();
@@ -207,6 +219,12 @@
     out.source = out.source || 'text';
     // fields to check: the reader was not sure (below 90%), or the app guessed or corrected the value
     const min = input.minConfidence || 90;
+    // A QR code to someone's LinkedIn profile (linkedin.com/in/jan-van-der-berg-1a2b3c) carries their name.
+    // It loses accents, so the name read from the card wins when it is the same name.
+    const ln = linkedinName(out.profile || '');
+    if (ln && !(out.name && plain(out.name).replace(/[^a-z]+/g, '') === plain(ln).replace(/[^a-z]+/g, ''))) {
+      out.name = ln; conf.name = 100; guess.name = true;
+    }
     out.check = ['name', 'company', 'title', 'email', 'phone', 'website'].filter(k => out[k] && (guess[k] || out.changed.includes(k) || (conf[k] != null && conf[k] < min)));
     delete out.changed;
     return out;
