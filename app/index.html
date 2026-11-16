@@ -188,6 +188,7 @@
       <h1 id="dTitle" style="font-size:1.1rem"></h1>
     </header>
     <div id="dInfo"></div>
+    <div class="panel" id="dupPanel" hidden></div>
 
 
     <div class="panel" id="addFields" hidden>
@@ -392,7 +393,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.12.0';
+const APP_VERSION = '2.13.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -500,7 +501,10 @@ async function flushQueue() {
   flushing = true;
   const left = [];
   for (const op of q) {
-    try { await api(op.action, op.data); }
+    try {
+      const r = await api(op.action, op.data);
+      if (op.action === 'add' && r && r.id && r.id !== op.data.clientId) onMerged(op.data.clientId, r);   // same name: added to an existing contact
+    }
     catch (e) { if (!(op.action === 'deleteContact' && /not found/i.test(e.message))) left.push(op); }   // already gone = done
   }
   ls.set('ownerQueue', left);
@@ -508,6 +512,63 @@ async function flushQueue() {
   renderBanner();
   await flushPhotos();
   if (!left.length) refresh(true);
+}
+
+/* ---------- same person met twice ---------- */
+// Same rules as the server: case, accents, punctuation, ranks/titles and word order don't matter; one-word names never match.
+const HONORIFICS = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'drs', 'ir', 'ing', 'prof', 'mevr', 'dhr', 'hr', 'fr', 'herr', 'frau', 'mme', 'mlle', 'm', 'sir',
+  'cdr', 'ltcdr', 'lcdr', 'lt', 'capt', 'cpt', 'cmdr', 'col', 'ltcol', 'maj', 'gen', 'adm', 'radm', 'vadm', 'cdre', 'sgt', 'phd', 'msc', 'bsc', 'mba', 'jr', 'sr']);
+function nameKey(name) {
+  const w = clean(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/).filter(x => x && !HONORIFICS.has(x));
+  return w.length >= 2 ? w.sort().join(' ') : '';
+}
+let mergedNotice = '';
+// The server added a new contact to an existing one with the same name: follow it on this phone.
+function onMerged(oldId, c) {
+  contacts = contacts.filter(x => x.id !== oldId);
+  replaceContact(c);
+  photoQueue.forEach(p => { if (p.contactId === oldId) p.contactId = c.id; }); savePhotoQueue();
+  if (current && current.id === oldId) current = contacts.find(x => x.id === c.id) || c;
+  ls.set('ownerRecent', contacts);
+  mergedNotice = clean(c.name);
+}
+// Contacts that may be the same person: same name (but another email address) or same email address.
+function possibleTwins(c) {
+  const key = nameKey(c.name), mail = clean(c.email).toLowerCase();
+  const own = x => x.owner || (me && me.id) || '';
+  return contacts.filter(x => x.id !== c.id && own(x) === own(c) &&
+    ((key && nameKey(x.name) === key) || (mail && clean(x.email).toLowerCase() === mail)));
+}
+function renderTwins(c) {
+  const list = possibleTwins(c), p = $('dupPanel');
+  p.hidden = !list.length;
+  if (!list.length) return;
+  p.innerHTML = '<h2>Possibly the same person</h2><p class="muted small" style="margin-top:0">Merging combines notes, follow-ups, tags and photos into one contact.</p>';
+  list.forEach(x => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:10px';
+    const info = [companyOf(x) && companyOf(x).text, clean(x.email), eventsOf(x).map(e => e.name).join(', '), new Date(x.time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })].filter(Boolean).join(' · ');
+    row.innerHTML = `<div style="flex:1;min-width:0"><a href="#c=${esc(encodeURIComponent(x.id))}">${esc(clean(x.name))}</a><div class="muted small">${esc(info)}</div></div>`;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn ghost'; b.textContent = 'Merge';
+    b.addEventListener('click', () => mergeWith(x));
+    row.appendChild(b);
+    p.appendChild(row);
+  });
+}
+async function mergeWith(x) {
+  const c = current;
+  if (!navigator.onLine) return toast('Merging needs a connection.');
+  if (pendingIds().has(c.id) || pendingIds().has(x.id)) { await flushQueue(); if (pendingIds().has(c.id) || pendingIds().has(x.id)) return toast('Wait until your changes have synced, then try again.'); }
+  if (!confirm('Merge "' + clean(c.name) + '" and "' + clean(x.name) + '" into one contact? Notes, follow-ups, tags and photos are combined. This cannot be undone.')) return;
+  try {
+    const m = await api('merge', { id: c.id, other: x.id });
+    contacts = contacts.filter(y => y.id !== c.id && y.id !== x.id);
+    contacts.unshift(m);
+    ls.set('ownerRecent', contacts);
+    toast('Merged');
+    if (location.hash === '#c=' + encodeURIComponent(m.id)) openContact(m.id); else location.hash = 'c=' + encodeURIComponent(m.id);
+  } catch (e) { toast(e.message); }
 }
 
 /* ---------- photos waiting to be sent (kept in IndexedDB: photos are too big for localStorage) ---------- */
@@ -931,6 +992,7 @@ function openContact(id) {
   $('addFields').hidden = true;
   if ($('fuMail')) $('fuMail').addEventListener('click', ev => { ev.preventDefault(); location.href = followUpMailto(current); });
   $('deletePanel').hidden = false;
+  renderTwins(c);
   $('workPanel').hidden = false;
   $('eTitle').value = clean(c.title); $('eWebsite').value = clean(c.website);
   pendingPhotos = [];
@@ -949,6 +1011,7 @@ function openAdd() {
   $('dInfo').innerHTML = '';
   $('addFields').hidden = false;
   $('deletePanel').hidden = true;
+  $('dupPanel').hidden = true;
   pendingPhotos = [];
   renderPhotos();
   ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
@@ -991,15 +1054,19 @@ $('saveBtn').addEventListener('click', async () => {
   ls.set('ownerRecent', contacts);
   enqueue(op);
   $('saveBtn').disabled = true;
+  mergedNotice = '';
   await flushQueue();
   $('saveBtn').disabled = false;
   const stillQueued = queue().some(o => (o.data.id || o.data.clientId) === (data.id || data.clientId));
   const photosToSend = current.isNew ? pendingPhotos.slice() : [];
   pendingPhotos = [];
   location.hash = '';
-  photosToSend.forEach(url => enqueuePhoto(data.clientId, url));
+  // merged into an existing contact? then the photos go there
+  const savedId = data.clientId && !contacts.some(x => x.id === data.clientId) && current ? current.id : data.clientId;
+  photosToSend.forEach(url => enqueuePhoto(savedId, url));
   if (photosToSend.length) await flushPhotos();
-  const waitingNow = stillQueued || (photosToSend.length && queuedPhotosOf(data.clientId).length);
+  const waitingNow = stillQueued || (photosToSend.length && queuedPhotosOf(savedId).length);
+  if (mergedNotice && !waitingNow) { toast('Same name found: added to your existing contact ' + mergedNotice); mergedNotice = ''; return; }
   toast(waitingNow ? 'Saved on this phone. Will sync when online.' : photosToSend.length ? 'Saved with ' + photosToSend.length + ' photo' + (photosToSend.length > 1 ? 's' : '') : 'Saved');
 });
 
