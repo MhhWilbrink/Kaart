@@ -367,7 +367,7 @@
     </div>
     <div class="panel">
       <h2>Card scanner</h2>
-      <label class="small" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;font-weight:400"><input type="checkbox" id="camFrameOn" style="width:auto"> Use the scan frame (live camera with a card-shaped frame; the camera app is usually sharper)</label>
+      <label class="small" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;font-weight:400"><input type="checkbox" id="camFrameOn" style="width:auto"> Use the scan frame (live camera with a card-shaped frame)</label>
       <p class="small muted" style="margin:0 0 6px"><b>Languages.</b> English is always on. Add the languages of the cards you scan for better accents (é, ü, ø, ć). Each language makes reading a little slower and is downloaded once (1–3 MB).</p>
       <div class="chips" id="ocrLangChips"></div>
       <h2 style="margin-top:16px">How well it reads</h2>
@@ -474,7 +474,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.16.2';
+const APP_VERSION = '2.16.3';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -1440,8 +1440,8 @@ async function scanFile(file) {
 // A straight, sharp photo of just the card reads much better. Without camera access (or when the
 // person prefers it) the normal camera app / photo picker is used.
 let camStream = null;
-// Opt-in: on the phone the camera app gives a much sharper photo than the live camera view.
-const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && ls.get('camFrame', false) === true;
+// On by default (read best in the test on an iPhone); a too-small camera picture falls back to the camera app.
+const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && ls.get('camFrame', null) !== false;
 $('scanBtn').addEventListener('click', e => {
   if (e.target === $('scanInput') || !camSupported()) return;      // let the file picker open
   e.preventDefault();
@@ -2202,7 +2202,7 @@ async function openSettings() {
   renderStats();
   renderPickList(); editPick(null);
   renderOcrLangs();
-  $('camFrameOn').checked = ls.get('camFrame', false) === true;
+  $('camFrameOn').checked = ls.get('camFrame', null) !== false;
   renderAccuracy();
   $('appVersion').textContent = 'App version ' + APP_VERSION + (me && me.name ? ' · signed in as ' + me.name : '');
   fillFuForm();
