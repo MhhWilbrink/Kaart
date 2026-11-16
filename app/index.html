@@ -94,6 +94,14 @@
   input.check, textarea.check { background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 6px, #fdefb2 6px, #fdefb2 12px); border-color:#e0a800; }
   .checknote { display:flex; align-items:center; gap:6px; font-size:.8rem; color:#7a5b00; margin:2px 0 8px; }
   .checknote i { width:22px; height:12px; border:1px solid #e0a800; border-radius:3px; background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 3px, #fdefb2 3px, #fdefb2 6px); }
+  .check-row { display:flex; align-items:center; gap:8px; font-weight:400; margin-top:10px; }
+  .check-row input { width:auto; margin:0; }
+  .pickrow { display:flex; align-items:flex-start; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+  .pickrow:first-child { border-top:0; }
+  .pickrow .info { flex:1; min-width:0; }
+  .pickrow .info b { display:block; font-weight:600; }
+  .pickrow .opts { color:var(--muted); font-size:.8rem; }
+  .badge.team { background:#e0e7ff; color:#3730a3; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -199,13 +207,10 @@
       <p class="muted small" id="photoHint" style="margin:6px 0 0">Badge, business card, or a photo of the person or their product.</p>
     </div>
     <div class="panel">
-      <h2>Interest</h2>
+      <h2>Lead</h2>
       <div class="chips" id="tempChips"></div>
     </div>
-    <div class="panel">
-      <h2>Next steps</h2>
-      <div class="chips" id="actionChips"></div>
-    </div>
+    <div id="pickPanels"></div>
     <div class="panel">
       <h2>Follow up</h2>
       <div class="chips" id="followChips"></div>
@@ -249,6 +254,27 @@
         <div class="actions">
           <button class="btn" id="evSave" type="submit">Save event</button>
           <button class="btn ghost" id="evCancel" type="button" hidden>Cancel</button>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Quick picks</h2>
+      <p class="small muted" style="margin:0 0 6px">Your own one-tap answers on every contact, for example <i>Interest: product A / product B</i> or <i>Next step: call / meeting / quote</i>. They are included in the export.</p>
+      <div id="pickList"></div>
+      <form id="pickForm" style="margin-top:8px">
+        <label for="pickName" id="pickFormTitle">New set</label>
+        <input id="pickName" maxlength="30" placeholder="e.g. Interest" autocomplete="off">
+        <label for="pickOptions">Options, one per line</label>
+        <textarea id="pickOptions" rows="4" placeholder="Product A&#10;Product B&#10;Service"></textarea>
+        <label class="check-row"><input type="checkbox" id="pickMulti" checked> More than one answer allowed</label>
+        <div id="pickEventsRow">
+          <label>Only show at these events <span class="muted">(none = always)</span></label>
+          <div class="chips" id="pickEvents"></div>
+        </div>
+        <label class="check-row" id="pickTeamRow" hidden><input type="checkbox" id="pickTeam"> For the whole team (only administrators can change it)</label>
+        <div class="actions">
+          <button class="btn" id="pickSave" type="submit">Save set</button>
+          <button class="btn ghost" id="pickCancel" type="button" hidden>Cancel</button>
         </div>
       </form>
     </div>
@@ -325,7 +351,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.9.1';
+const APP_VERSION = '2.10.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -361,7 +387,8 @@ let token = ls.get('ownerToken', null);
 let contacts = ls.get('ownerRecent', []);
 let seenUpTo = ls.get('ownerSeen', '');
 let events = ls.get('ownerEvents', []);
-let me = ls.get('ownerMe', null);           // your own card details and follow-up template
+let me = ls.get('ownerMe', null);
+let picks = ls.get('ownerPicks', { team: [], mine: null });   // quick-pick sets: team (by administrators) and your own           // your own card details and follow-up template
 let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
 let current = null;       // contact being edited, or {isNew:true}
 let form = null;          // {tags:Set, followUp, myNotes}
@@ -489,7 +516,7 @@ function visibleContacts() {
     if (filter === 'mine' ? c.ownerName : filter === 'followup' ? !(c.followUp && c.followUp <= today) : filter && !eventsOf(c).some(e => e.id === filter)) return false;
     if (!words.length) return true;
     const co = companyOf(c);
-    const hay = fold([clean(c.name), co ? co.text : '', clean(c.email), clean(c.title)].join(' '));
+    const hay = fold([clean(c.name), co ? co.text : '', clean(c.email), clean(c.title), (c.tags || []).join(' ')].join(' '));
     return words.every(w => hay.includes(w));
   });
 }
@@ -530,7 +557,7 @@ function renderList() {
     const evs = filter && filter !== 'followup' && filter !== 'mine' ? [] : eventsOf(c);
     const meta = [c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : ''), c.ownerName ? 'collected by ' + c.ownerName : ''].filter(Boolean).join(' · ');
     const badges = evs.map(e => `<span class="badge event">${esc(e.name)}</span>`).join('') +
-      (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(t)}</span>`).join('') +
+      (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(tagLabel(t))}</span>`).join('') +
       (c.followUp ? `<span class="badge ${c.followUp <= today ? 'due' : ''}">Follow up ${c.followUp <= today ? 'now' : c.followUp}</span>` : '') +
       ((c.photos || []).length ? `<span class="badge">${c.photos.length} photo${c.photos.length > 1 ? 's' : ''}</span>` : '') +
       (pend.has(c.id) ? `<span class="badge pending">Not synced yet</span>` : '');
@@ -547,7 +574,8 @@ $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeo
 async function refresh(silent) {
   if (!navigator.onLine) { renderBanner(); return; }
   try {
-    const [fresh, evs, who] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null)]);
+    const [fresh, evs, who, qp] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null), api('quickPicks').catch(() => null)]);
+    if (qp && Array.isArray(qp.team)) { picks = qp; ls.set('ownerPicks', picks); }
     if (Array.isArray(evs)) { events = evs; ls.set('ownerEvents', events); }
     if (who && who.profile) { me = who; ls.set('ownerMe', me); }
     // keep local, not-yet-synced edits visible
@@ -573,11 +601,39 @@ function chip(label, on, extraClass, onClick) {
   return b;
 }
 
+/* ---------- quick picks ---------- */
+const STARTER = [{ id: 'next', name: 'Next steps', options: ACTIONS, multi: true, events: [] }];
+const mySets = () => (Array.isArray(picks.mine) ? picks.mine : STARTER);
+const allSets = () => (picks.team || []).map(g => Object.assign({ team: true }, g)).concat(mySets());
+const pickTag = (g, o) => g.name + ': ' + o;
+// older contacts have plain answers ("Send datasheet") from before the sets existed
+const pickOn = (g, o, tags) => tags.has(pickTag(g, o)) || tags.has(o);
+function setsFor(c) {
+  const evIds = (c && !c.isNew ? eventsOf(c) : eventsOf({ time: new Date().toISOString() })).map(e => e.id);
+  return allSets().filter(g => !g.events || !g.events.length || g.events.some(id => evIds.includes(id)));
+}
+function renderPicks() {
+  const box = $('pickPanels'); box.innerHTML = '';
+  setsFor(current).forEach(g => {
+    const panel = document.createElement('div'); panel.className = 'panel';
+    panel.innerHTML = `<h2>${esc(g.name)}${g.team ? ' <span class="badge team">team</span>' : ''}</h2>`;
+    const row = document.createElement('div'); row.className = 'chips';
+    g.options.forEach(o => row.appendChild(chip(o, pickOn(g, o, form.tags), '', () => {
+      const was = pickOn(g, o, form.tags);
+      if (!g.multi) g.options.forEach(x => { form.tags.delete(pickTag(g, x)); form.tags.delete(x); });
+      form.tags.delete(o);
+      if (was) form.tags.delete(pickTag(g, o)); else form.tags.add(pickTag(g, o));
+      renderChips();
+    })));
+    panel.appendChild(row); box.appendChild(panel);
+  });
+}
+const tagLabel = t => (t.includes(': ') ? t.slice(t.indexOf(': ') + 2) : t);
+
 function renderChips() {
   const t = $('tempChips'); t.innerHTML = '';
   TEMPS.forEach(x => t.appendChild(chip(x, form.tags.has(x), x, () => { TEMPS.forEach(y => form.tags.delete(y)); if (!t.querySelector('.on.' + x)) form.tags.add(x); renderChips(); })));
-  const a = $('actionChips'); a.innerHTML = '';
-  ACTIONS.forEach(x => a.appendChild(chip(x, form.tags.has(x), '', () => { form.tags.has(x) ? form.tags.delete(x) : form.tags.add(x); renderChips(); })));
+  renderPicks();
   const f = $('followChips'); f.innerHTML = '';
   FOLLOW.forEach(([label, days]) => {
     const d = todayStr(days);
@@ -1020,12 +1076,17 @@ $('exportBtn').addEventListener('click', async () => {
   const rows = visibleContacts();
   if (!rows.length) return;
   const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-  const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Interest', 'Next steps', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by'];
+  const sets = allSets();
+  const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Lead'].concat(sets.map(g => g.name))
+    .concat(['Other tags', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by']);
   const lines = [head].concat(rows.map(c => {
-    const d = new Date(c.time), tags = c.tags || [];
+    const d = new Date(c.time), tags = new Set(c.tags || []);
+    const known = new Set(TEMPS);
+    const answers = sets.map(g => g.options.filter(o => pickOn(g, o, tags)).map(o => { known.add(pickTag(g, o)); known.add(o); return o; }).join(', '));
     return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.title), clean(c.email), clean(c.phone), clean(c.website),
-      eventsOf(c).map(e => e.name).join(', '), tags.filter(t => TEMPS.includes(t)).join(', '), tags.filter(t => !TEMPS.includes(t)).join(', '),
-      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me'];
+      eventsOf(c).map(e => e.name).join(', '), [...tags].filter(t => TEMPS.includes(t)).join(', ')].concat(answers)
+      .concat([[...tags].filter(t => !known.has(t)).map(tagLabel).join(', '),
+      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me']);
   })).map(r => r.map(cell).join(';'));
   // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
   const csv = '\ufeff' + lines.join('\r\n');
@@ -1103,6 +1164,69 @@ async function pushState() {
   return { supported: true, reg, sub, permission: Notification.permission };
 }
 
+/* ---------- quick picks editor (settings) ---------- */
+let editingPick = null;     // { scope, id }
+let pickEventSel = new Set();
+function renderPickList() {
+  const box = $('pickList'); box.innerHTML = '';
+  const isAdmin = me && me.role === 'admin';
+  allSets().forEach(g => {
+    const row = document.createElement('div'); row.className = 'pickrow';
+    const evNames = (g.events || []).map(id => (events.find(e => e.id === id) || {}).name).filter(Boolean);
+    row.innerHTML = `<div class="info"><b>${esc(g.name)} ${g.team ? '<span class="badge team">team</span>' : ''}</b>
+      <span class="opts">${esc(g.options.join(' · '))}${g.multi ? '' : ' · one answer'}${evNames.length ? ' · only at ' + esc(evNames.join(', ')) : ''}</span></div>`;
+    if (!g.team || isAdmin) {
+      const ed = document.createElement('button'); ed.type = 'button'; ed.className = 'iconbtn'; ed.textContent = 'Edit';
+      ed.addEventListener('click', () => editPick(g));
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'iconbtn danger'; del.textContent = 'Delete';
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete the quick picks "' + g.name + '"? Answers already given stay on the contacts.')) return;
+        await savePickList(g.team ? 'team' : 'mine', list => list.filter(x => x.id !== g.id), 'Deleted');
+      });
+      row.append(ed, del);
+    }
+    box.appendChild(row);
+  });
+}
+function renderPickEvents() {
+  const box = $('pickEvents'); box.innerHTML = '';
+  $('pickEventsRow').hidden = !events.length;
+  events.forEach(e => box.appendChild(chip(e.name, pickEventSel.has(e.id), '', () => { pickEventSel.has(e.id) ? pickEventSel.delete(e.id) : pickEventSel.add(e.id); renderPickEvents(); })));
+}
+function editPick(g) {
+  editingPick = g ? { scope: g.team ? 'team' : 'mine', id: g.id } : null;
+  $('pickFormTitle').textContent = g ? 'Edit "' + g.name + '"' : 'New set';
+  $('pickName').value = g ? g.name : '';
+  $('pickOptions').value = g ? g.options.join('\n') : '';
+  $('pickMulti').checked = g ? g.multi !== false : true;
+  $('pickTeam').checked = !!(g && g.team);
+  $('pickTeamRow').hidden = !(me && me.role === 'admin');
+  pickEventSel = new Set(g ? g.events || [] : []);
+  renderPickEvents();
+  $('pickCancel').hidden = !g;
+  if (g) $('pickName').focus();
+}
+async function savePickList(scope, change, msg) {
+  const base = scope === 'team' ? (picks.team || []) : mySets();
+  try {
+    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [] }))) });
+    ls.set('ownerPicks', picks); renderPickList(); toast(msg); return true;
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); return false; }
+}
+$('pickCancel').addEventListener('click', () => editPick(null));
+$('pickForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('pickSave'); btn.disabled = true;
+  const set = { id: editingPick ? editingPick.id : '', name: $('pickName').value.trim(), options: $('pickOptions').value.split(/\n+/).map(x => x.trim()).filter(Boolean),
+    multi: $('pickMulti').checked, events: [...pickEventSel] };
+  const scope = me && me.role === 'admin' && $('pickTeam').checked ? 'team' : 'mine';
+  const moved = editingPick && editingPick.scope !== scope;
+  let ok = await savePickList(scope, list => editingPick && !moved ? list.map(x => (x.id === set.id ? set : x)) : list.concat(set), editingPick ? 'Saved' : 'Quick picks added');
+  if (ok && moved) ok = await savePickList(editingPick.scope, list => list.filter(x => x.id !== set.id), 'Saved');
+  if (ok) editPick(null);
+  btn.disabled = false;
+});
+
 function renderOcrLangs() {
   const box = $('ocrLangChips'); box.innerHTML = '';
   const on = ls.get('ocrLangs', ['fra', 'deu']);
@@ -1114,6 +1238,7 @@ function renderOcrLangs() {
 }
 async function openSettings() {
   show('vSettings');
+  renderPickList(); editPick(null);
   renderOcrLangs();
   $('appVersion').textContent = 'App version ' + APP_VERSION + (me && me.name ? ' · signed in as ' + me.name : '');
   fillFuForm();
@@ -1217,7 +1342,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 function signOutLocal() {
   token = null;
-  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe');
+  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe'); ls.del('ownerPicks');
   idbSet('token', null);
   contacts = []; events = []; filter = '';
   location.hash = '';
