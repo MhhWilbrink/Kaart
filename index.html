@@ -355,7 +355,11 @@ async function loadProfile() {
     await loadConfig();
     const url = new URL(ENDPOINT, location.href);
     if (USER) url.searchParams.set("u", USER);
+    // counted once per visitor per day, for the card holder's statistics (no personal data)
+    const day = new Date().toLocaleDateString("sv-SE"), seenKey = "nfcCardSeen" + (USER ? ":" + USER : "");
+    if (store.get(seenKey) !== day) { url.searchParams.set("view", "1"); url.searchParams.set("d", day); }
     const res = await fetch(url.href);
+    if (url.searchParams.get("view")) store.set(seenKey, day);
     const data = await res.json();
     if (data.error === "card_not_found") {
       store.del(CACHE_KEY);

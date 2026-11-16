@@ -98,6 +98,18 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   .addphoto { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; padding:12px; border:1.5px dashed #cbd5e1; border-radius:12px; color:var(--primary); font-weight:600; font-size:.95rem; cursor:pointer; }
   .addphoto.off { opacity:.5; pointer-events:none; }
+  #camView { position:fixed; inset:0; z-index:50; background:#000; }
+  #camVideo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #camFrame { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); width:86vw; max-width:520px; aspect-ratio:85.6/54; border:3px solid #fff; border-radius:14px; box-shadow:0 0 0 200vmax rgba(0,0,0,.5); }
+  #camFrame.portrait { width:auto; height:60vh; max-height:620px; aspect-ratio:54/85.6; }
+  #camTop { position:absolute; left:0; right:0; top:max(16px, env(safe-area-inset-top)); text-align:center; }
+  #camHint { display:inline-block; background:rgba(0,0,0,.55); color:#fff; padding:8px 14px; border-radius:20px; font-size:.95rem; }
+  #camHint.warn { background:#b45309; }
+  #camBar { position:absolute; left:0; right:0; bottom:calc(52px + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-around; }
+  #camShot { width:72px; height:72px; border-radius:50%; border:5px solid #fff; background:rgba(255,255,255,.35); cursor:pointer; }
+  #camShot:active { background:#fff; }
+  .camside { background:none; border:0; color:#fff; font:inherit; font-size:1rem; width:96px; cursor:pointer; }
+  .camlink { position:absolute; left:0; right:0; bottom:calc(14px + env(safe-area-inset-bottom)); background:none; border:0; color:#cbd5e1; font:inherit; font-size:.85rem; text-decoration:underline; cursor:pointer; }
   #viewer { position:fixed; inset:0; z-index:30; background:#000; display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
   #viewer img { flex:1; min-height:0; object-fit:contain; width:100%; }
   #viewer .bar { display:flex; gap:10px; padding:12px 14px; }
@@ -299,6 +311,11 @@
       <button class="iconbtn" id="backBtn2">Back</button>
       <h1 style="font-size:1.1rem">Settings</h1>
     </header>
+    <div class="panel" id="statsPanel">
+      <h2>Your card</h2>
+      <p class="small muted" style="margin:0 0 6px">How often your card page was opened (once per visitor per day) and how many people then shared their details.</p>
+      <div id="statsBody"></div>
+    </div>
     <div class="panel">
       <h2>Events</h2>
       <p class="small muted" style="margin:0 0 6px">Contacts from these dates are grouped under the event automatically.</p>
@@ -349,9 +366,14 @@
       </form>
     </div>
     <div class="panel">
-      <h2>Card scanner languages</h2>
-      <p class="small muted" style="margin:0 0 6px">English is always on. Add the languages of the cards you scan for better accents (é, ü, ø, ć). Each language makes reading a little slower and is downloaded once (1–3 MB).</p>
+      <h2>Card scanner</h2>
+      <label class="small" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;font-weight:400"><input type="checkbox" id="camFrameOn" style="width:auto"> Use the scan frame (camera with a card-shaped frame)</label>
+      <p class="small muted" style="margin:0 0 6px"><b>Languages.</b> English is always on. Add the languages of the cards you scan for better accents (é, ü, ø, ć). Each language makes reading a little slower and is downloaded once (1–3 MB).</p>
       <div class="chips" id="ocrLangChips"></div>
+      <h2 style="margin-top:16px">How well it reads</h2>
+      <p class="small muted" style="margin:0 0 6px">Counted on this phone from the fields you correct before saving a scanned card. No names or details are kept, only counts.</p>
+      <div id="accBody"></div>
+      <div class="actions" style="margin-top:8px"><button class="btn ghost" id="accCopy" type="button">Copy summary</button><button class="btn ghost" id="accReset" type="button">Reset</button></div>
     </div>
     <div class="panel">
       <h2>Follow-up email</h2>
@@ -406,6 +428,18 @@
   </section>
 </div>
 
+<div id="camView" hidden>
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="camFrame"></div>
+  <div id="camTop"><span id="camHint">Fit the card inside the frame</span></div>
+  <div id="camBar">
+    <button type="button" class="camside" id="camCancel">Cancel</button>
+    <button type="button" id="camShot" aria-label="Take photo"></button>
+    <button type="button" class="camside" id="camTurn">Turn frame</button>
+  </div>
+  <button type="button" class="camlink" id="camFile">Use the camera app or a photo instead</button>
+</div>
+
 <div class="savebar" id="saveBar" hidden>
   <div class="inner">
     <button class="btn" id="saveBtn">Save</button>
@@ -438,7 +472,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.15.0';
+const APP_VERSION = '2.16.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -684,6 +718,7 @@ async function flushPhotos() {
 /* ---------- views ---------- */
 function show(view) {
   ['vLogin', 'vList', 'vDetail', 'vSettings', 'vReport'].forEach(v => $(v).hidden = v !== view);
+  if (!$('camView').hidden) closeCamera();
   $('saveBar').hidden = view !== 'vDetail';
   $('addBar').hidden = view !== 'vList';
   window.scrollTo(0, 0);
@@ -1108,6 +1143,7 @@ function openContact(id) {
 
 function openAdd() {
   current = { isNew: true, id: uuid() };
+  scanBase = null;
   form = { tags: new Set(), followUp: '', myNotes: '', tasks: [], newDue: todayStr(7) };
   $('dTitle').textContent = 'Add contact';
   $('dInfo').innerHTML = '';
@@ -1146,6 +1182,7 @@ $('saveBtn').addEventListener('click', async () => {
     Object.assign(data, { clientId: current.id, clientTimestamp: new Date().toISOString(), name, email,
       phone: $('aPhone').value.trim(), company: $('aCompany').value.trim(), title: $('aTitle').value.trim(), website: $('aWebsite').value.trim(), source: $('aSource').value });
     op = { action: 'add', data };
+    recordScan();
     contacts.unshift(localFromAdd(data));
   } else {
     data.id = current.id;
@@ -1342,10 +1379,13 @@ LINE_TARGETS.forEach(([id, label]) => {
   $('lineTargetsBtns').appendChild(b);
 });
 
-$('scanInput').addEventListener('change', async e => {
+$('scanInput').addEventListener('change', e => {
   const file = e.target.files && e.target.files[0];
   e.target.value = '';
-  if (!file || !current || !current.isNew) return;
+  if (file) scanFile(file);
+});
+async function scanFile(file) {
+  if (!current || !current.isNew) return;
   const status = t => { $('scanStatus').textContent = t; };
   const btn = $('scanBtn'); btn.classList.add('off'); btn.querySelector('span').textContent = 'Reading…';
   const t0 = Date.now();
@@ -1370,6 +1410,7 @@ $('scanInput').addEventListener('change', async e => {
     fill('aName', CardParse.nameCase(r.name || '')); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
     fill('aTitle', r.title); fill('aWebsite', r.website);
     markChecks(r.check || []);
+    rememberScan(r.source === 'qr' ? 'qr' : 'ocr', r.check || [], Math.round((Date.now() - t0) / 1000));
     $('aSource').value = 'badge';
     const texts = r.source === 'qr'
       ? qr.split(/\r?\n|;(?=[A-Z]+:)/).filter(l => l && !/^(BEGIN|END|VERSION|MECARD|N|PRODID|REV|UID)[:;]/i.test(l)).map(l => l.replace(/^[A-Z-]+(;[^:]*)?:/i, '').replace(/;+/g, ' ').trim()).filter(l => l && !/^(TEL|ADR|EMAIL|URL|ORG|TITLE|FN|NOTE|CELL|WORK|HOME|VOICE|FAX|PREF|INTERNET|TYPE|[ ,=])+$/i.test(l))
@@ -1383,7 +1424,148 @@ $('scanInput').addEventListener('change', async e => {
       : 'No contact details recognised. Tap the lines below to fill in the fields, or try a sharper photo.');
   } catch (err) { status(err.message); }
   btn.classList.remove('off'); btn.querySelector('span').textContent = 'Scan another card';
+}
+
+/* ---------- scan frame: the phone's camera with a card-shaped frame ---------- */
+// A straight, sharp photo of just the card reads much better. Without camera access (or when the
+// person prefers it) the normal camera app / photo picker is used.
+let camStream = null;
+const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && ls.get('camFrame', true) !== false;
+$('scanBtn').addEventListener('click', e => {
+  if (e.target === $('scanInput') || !camSupported()) return;      // let the file picker open
+  e.preventDefault();
+  openCamera();
 });
+async function openCamera() {
+  $('camView').hidden = false;
+  $('camHint').textContent = 'Starting the camera…'; $('camHint').className = '';
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    $('camVideo').srcObject = camStream;
+    await $('camVideo').play().catch(() => {});
+    $('camHint').textContent = ($('camFrame').classList.contains('portrait') ? 'Fit the badge' : 'Fit the card') + ' inside the frame';
+  } catch (err) {
+    closeCamera();
+    toast('No camera access. Using the camera app instead.');
+    $('scanInput').click();
+  }
+}
+function closeCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; $('camVideo').srcObject = null;
+  $('camView').hidden = true;
+}
+// sharpness: strongest edges relative to the contrast (calibrated on real card photos: sharp ≈ 0.5–0.95, unreadable < 0.1)
+function sharpness(canvas) {
+  const w = 480, h = Math.max(2, Math.round(canvas.height * w / canvas.width));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(canvas, 0, 0, w, h);
+  const d = c.getContext('2d').getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+  const lap = [], sorted = Array.from(g).sort((a, b) => a - b);
+  const contrast = sorted[Math.floor(sorted.length * 0.95)] - sorted[Math.floor(sorted.length * 0.05)] + 1;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    lap.push(Math.abs(4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]));
+  }
+  lap.sort((a, b) => a - b);
+  return lap[Math.floor(lap.length * 0.99)] / contrast;
+}
+let blurWarned = false;
+$('camShot').addEventListener('click', () => {
+  const v = $('camVideo');
+  if (!camStream || !v.videoWidth) return;
+  // the part of the video under the frame (the video fills the screen, cropped like object-fit: cover)
+  const vr = v.getBoundingClientRect(), fr = $('camFrame').getBoundingClientRect();
+  const scale = Math.max(vr.width / v.videoWidth, vr.height / v.videoHeight);
+  const offX = (vr.width - v.videoWidth * scale) / 2, offY = (vr.height - v.videoHeight * scale) / 2;
+  const margin = 0.08;                                     // a little room: the reader finds the card edges itself
+  let x = (fr.left - vr.left - offX) / scale - fr.width / scale * margin, y = (fr.top - vr.top - offY) / scale - fr.height / scale * margin;
+  let w = fr.width / scale * (1 + 2 * margin), h = fr.height / scale * (1 + 2 * margin);
+  x = Math.max(0, x); y = Math.max(0, y); w = Math.min(v.videoWidth - x, w); h = Math.min(v.videoHeight - y, h);
+  const c = document.createElement('canvas'); c.width = Math.round(w); c.height = Math.round(h);
+  c.getContext('2d').drawImage(v, x, y, w, h, 0, 0, c.width, c.height);
+  if (sharpness(c) < 0.12 && !blurWarned) {
+    blurWarned = true;
+    $('camHint').textContent = 'The photo looks blurry. Hold steady and tap again.'; $('camHint').className = 'warn';
+    return;
+  }
+  blurWarned = false;
+  c.toBlob(blob => {
+    closeCamera();
+    if (blob) scanFile(new File([blob], 'card.jpg', { type: 'image/jpeg' }));
+  }, 'image/jpeg', 0.92);
+});
+$('camCancel').addEventListener('click', closeCamera);
+$('camTurn').addEventListener('click', () => {
+  $('camFrame').classList.toggle('portrait');
+  ls.set('camPortrait', $('camFrame').classList.contains('portrait'));
+  $('camHint').className = ''; $('camHint').textContent = ($('camFrame').classList.contains('portrait') ? 'Fit the badge' : 'Fit the card') + ' inside the frame';
+});
+if (ls.get('camPortrait', false)) $('camFrame').classList.add('portrait');
+$('camFile').addEventListener('click', () => { closeCamera(); $('scanInput').click(); });
+$('camFrameOn').addEventListener('change', e => ls.set('camFrame', e.target.checked));
+
+/* ---------- how well the scanner reads: learnt from the fields you correct ---------- */
+const ACC_FIELDS = [['name', 'Name'], ['company', 'Company'], ['title', 'Job title'], ['email', 'Email'], ['phone', 'Phone'], ['website', 'Website']];
+let scanBase = null;                     // what the scanner filled in, until the contact is saved
+function rememberScan(src, check, secs) {
+  const v = {};
+  ACC_FIELDS.forEach(([k]) => v[k] = $(CHECK_FIELDS[k]).value.trim());
+  scanBase = { src, check: check.slice(), v, secs };
+}
+function recordScan() {
+  if (!scanBase) return;
+  const st = ls.get('scanStats', null) || { since: todayStr(), scans: 0, qr: 0, secs: 0, fields: {} };
+  st.scans++;
+  if (scanBase.src === 'qr') st.qr++; else st.secs += scanBase.secs || 0;
+  if (scanBase.src !== 'qr') ACC_FIELDS.forEach(([k]) => {
+    const f = st.fields[k] = st.fields[k] || { read: 0, ok: 0, fixed: 0, missed: 0, shadedFixed: 0, shadedOk: 0 };
+    const was = scanBase.v[k], now = $(CHECK_FIELDS[k]).value.trim(), shaded = scanBase.check.includes(k);
+    if (was) {
+      f.read++;
+      if (was === now) { f.ok++; if (shaded) f.shadedOk++; }
+      else { f.fixed++; if (shaded) f.shadedFixed++; }
+    } else if (now) f.missed++;
+  });
+  ls.set('scanStats', st);
+  scanBase = null;
+}
+function accTotals(st) {
+  let fixes = 0, caught = 0, falseAlarms = 0;
+  ACC_FIELDS.forEach(([k]) => { const f = st.fields[k]; if (f) { fixes += f.fixed; caught += f.shadedFixed; falseAlarms += f.shadedOk; } });
+  return { fixes, caught, falseAlarms };
+}
+function accuracyText(st) {
+  const ocr = st.scans - st.qr, t = accTotals(st);
+  const lines = ['Card scanner since ' + st.since + ': ' + st.scans + ' scans (' + st.qr + ' via QR)' + (ocr ? ', ' + Math.round(st.secs / ocr) + ' s average' : '') + '.'];
+  ACC_FIELDS.forEach(([k, label]) => {
+    const f = st.fields[k]; if (!f) return;
+    lines.push(label + ': read ' + f.read + ', right ' + f.ok + ', corrected ' + f.fixed + ' (shaded ' + f.shadedFixed + '), shaded but right ' + f.shadedOk + ', missed ' + f.missed + '.');
+  });
+  lines.push('Shading: marked ' + t.caught + ' of ' + t.fixes + ' corrected fields; ' + t.falseAlarms + ' marked fields were already right.');
+  return lines.join('\n');
+}
+function renderAccuracy() {
+  const st = ls.get('scanStats', null), box = $('accBody');
+  $('accCopy').hidden = $('accReset').hidden = !st;
+  if (!st || !(st.scans - st.qr)) { box.innerHTML = '<p class="small muted" style="margin:0">No scanned cards saved yet.</p>'; return; }
+  const t = accTotals(st), ocr = st.scans - st.qr;
+  const rows = ACC_FIELDS.map(([k, label]) => {
+    const f = st.fields[k] || { read: 0, ok: 0, fixed: 0, missed: 0 };
+    return `<tr><td>${label}</td><td>${f.read ? pct(f.ok, f.read) : '–'}</td><td>${f.fixed}</td><td>${f.missed}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<p class="small" style="margin:0 0 6px">${st.scans} scans since ${esc(fmtDate(st.since))}${st.qr ? ' (' + st.qr + ' via QR)' : ''}, ${Math.round(st.secs / ocr)} s on average.</p>
+    <table class="rtab"><tr><th>Field</th><th>Read right</th><th>Corrected</th><th>Missed</th></tr>${rows}</table>
+    <p class="small muted" style="margin:8px 0 0">Yellow shading marked ${t.caught} of ${t.fixes} corrected fields. ${t.falseAlarms} shaded fields were already right.</p>`;
+}
+$('accCopy').addEventListener('click', async () => {
+  const st = ls.get('scanStats', null); if (!st) return;
+  try { await navigator.clipboard.writeText(accuracyText(st)); toast('Copied. Paste it in a message to whoever maintains the app.'); }
+  catch (e) { toast('Could not copy on this phone.'); }
+});
+$('accReset').addEventListener('click', () => { if (confirm('Reset the scanner statistics on this phone?')) { ls.del('scanStats'); renderAccuracy(); } });
+
 
 /* ---------- follow-up email and calendar ---------- */
 const DEFAULT_FU = {
@@ -1566,6 +1748,29 @@ $('exportBtn').addEventListener('click', async () => {
   toast('Exported ' + rows.length + (rows.length === 1 ? ' contact' : ' contacts'));
 });
 
+/* ---------- card statistics: card opened -> details shared ---------- */
+let myViews = ls.get('ownerViews', null);          // { 'YYYY-MM-DD': n }, from the server
+async function loadViews() {
+  if (!navigator.onLine) return myViews;
+  try { const r = await api('cardStats'); if (r && r.views) { myViews = r.views; ls.set('ownerViews', myViews); } } catch (e) { /* older backend */ }
+  return myViews;
+}
+const sumRange = (m, from, to) => Object.entries(m || {}).reduce((n, [d, v]) => n + (d >= from && d <= to ? v : 0), 0);
+const sharedIn = (list, from, to) => list.filter(c => c.source === 'card' && localDate(c.time) >= from && localDate(c.time) <= to).length;
+const pct = (a, b) => b ? Math.min(100, Math.round(a / b * 100)) + '%' : '–';
+async function renderStats() {
+  const box = $('statsBody');
+  const views = await loadViews();
+  if (!views) { box.innerHTML = '<p class="small muted" style="margin:0">Statistics appear once the card page has been opened (needs the latest Core).</p>'; return; }
+  const mine = contacts.filter(c => !c.ownerName);
+  const rows = [['Last 7 days', todayStr(-6), todayStr()], ['Last 30 days', todayStr(-29), todayStr()]]
+    .concat(events.slice(0, 5).map(e => [e.name, e.start, e.end]));
+  box.innerHTML = '<table class="rtab"><tr><th></th><th>Opened</th><th>Shared</th><th>%</th></tr>' + rows.map(([l, f, t]) => {
+    const v = sumRange(views, f, t), sh = sharedIn(mine, f, t);
+    return `<tr><td>${esc(l)}</td><td>${v}</td><td>${sh}</td><td>${pct(sh, v)}</td></tr>`;
+  }).join('') + '</table><p class="small muted" style="margin:8px 0 0">Counting started with version 2.16.</p>';
+}
+
 /* ---------- event report (beursverslag): built on the phone, shared as PDF or email ---------- */
 let rep = null;                       // { ev, scope, variant, type, data, r }
 let pdfReady = null, pdfFonts = null;
@@ -1616,7 +1821,7 @@ async function loadReport() {
     catch (e) { $('rBody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   } else {
     // your own contacts are on this phone already (also offline, including changes not synced yet)
-    rep.data = { event: rep.ev, scope: 'mine', people: [], contacts: contacts.filter(c => !c.ownerName) };
+    rep.data = { event: rep.ev, scope: 'mine', people: [], contacts: contacts.filter(c => !c.ownerName), views: await loadViews() };
   }
   renderReport();
 }
@@ -1659,6 +1864,10 @@ function buildReport() {
     ['Per day', countLine(Object.fromEntries(Object.entries(by(c => localDate(c.time))).sort().map(([d, n]) => [new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), n])))]
   ];
   if (team) figures.push(['Per person', countLine(by(c => c.ownerName || myName))]);
+  if (rep.data.views && !rep.type) {
+    const v = sumRange(rep.data.views, ev.start, ev.end), sh = sharedIn(all, ev.start, ev.end);
+    if (v || sh) figures.push(['Card opened → details shared', v + ' → ' + sh + ' (' + pct(sh, v) + ')']);
+  }
   figures.push(['Follow-ups', open.length + ' open' + (open.filter(x => x.t.due && x.t.due < today).length ? ' (' + open.filter(x => x.t.due && x.t.due < today).length + ' overdue)' : '') + ' · ' + tasks.filter(x => x.t.done).length + ' done']);
   const leads = TEMPS.concat(['']).map(t => [t || 'No lead', list.filter(c => leadOf(c) === t).length]).filter(([l, n]) => n || l !== 'No lead');
   const tnames = reportTypes().filter(t => !rep.type || rep.type === t);
@@ -1972,8 +2181,11 @@ function renderOcrLangs() {
 }
 async function openSettings() {
   show('vSettings');
+  renderStats();
   renderPickList(); editPick(null);
   renderOcrLangs();
+  $('camFrameOn').checked = ls.get('camFrame', true) !== false;
+  renderAccuracy();
   $('appVersion').textContent = 'App version ' + APP_VERSION + (me && me.name ? ' · signed in as ' + me.name : '');
   fillFuForm();
   renderEvents(); editEvent(null);

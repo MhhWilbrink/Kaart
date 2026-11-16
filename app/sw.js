@@ -1,5 +1,5 @@
 /* Service worker for the owner app: offline app shell + push notifications */
-const CACHE = 'owner-app-v19';
+const CACHE = 'owner-app-v20';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', '../config.json'];
 
 self.addEventListener('install', e => {
