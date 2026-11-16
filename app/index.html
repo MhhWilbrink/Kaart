@@ -281,6 +281,13 @@
       <textarea id="myNotes" placeholder="What did you talk about?"></textarea>
       <p class="muted small" style="margin:6px 0 0">Tip: tap the microphone on your keyboard to dictate.</p>
     </div>
+    <div class="panel" id="handPanel" hidden>
+      <h2>Hand over to a colleague</h2>
+      <p class="small muted" style="margin:0 0 8px">Notes, follow-ups, tags and photos go along. Your colleague gets a notification.</p>
+      <select id="handTo" aria-label="Colleague"></select>
+      <input id="handMsg" placeholder="Message (optional), e.g. your region" maxlength="300" autocomplete="off" style="margin-top:8px">
+      <button class="btn ghost" id="handBtn" type="button" style="width:100%;margin-top:10px">Hand over</button>
+    </div>
     <div class="panel" id="deletePanel">
       <button class="btn ghost danger" id="deleteBtn" type="button" style="width:100%">Delete contact</button>
     </div>
@@ -431,7 +438,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.14.0';
+const APP_VERSION = '2.15.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -556,7 +563,7 @@ async function flushQueue() {
 /* ---------- same person met twice ---------- */
 // Same rules as the server: case, accents, punctuation, ranks/titles and word order don't matter; one-word names never match.
 const HONORIFICS = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'drs', 'ir', 'ing', 'prof', 'mevr', 'dhr', 'hr', 'fr', 'herr', 'frau', 'mme', 'mlle', 'm', 'sir',
-  'cdr', 'ltcdr', 'lcdr', 'lt', 'capt', 'cpt', 'cmdr', 'col', 'ltcol', 'maj', 'gen', 'adm', 'radm', 'vadm', 'cdre', 'sgt', 'phd', 'msc', 'bsc', 'mba', 'jr', 'sr']);
+  'cdr', 'ltcdr', 'lcdr', 'lt', 'capt', 'cpt', 'cmdr', 'col', 'ltcol', 'maj', 'gen', 'adm', 'radm', 'vadm', 'cdre', 'sgt', 'kdr', 'kltz', 'ltz', 'kapt', 'kap', 'kol', 'ltkol', 'brig', 'cdt', 'kpt', 'phd', 'msc', 'bsc', 'mba', 'jr', 'sr']);
 function nameKey(name) {
   const w = clean(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/).filter(x => x && !HONORIFICS.has(x));
   return w.length >= 2 ? w.sort().join(' ') : '';
@@ -595,6 +602,36 @@ function renderTwins(c) {
     p.appendChild(row);
   });
 }
+// Hand a contact over to a colleague (other region or product)
+function renderHandover(c) {
+  const owner = c.owner || (me && me.id);
+  const others = people.filter(p => p.id !== owner);
+  const allowed = me && (!c.ownerName || me.role === 'admin');
+  $('handPanel').hidden = !(others.length && allowed);
+  if ($('handPanel').hidden) return;
+  $('handTo').innerHTML = '<option value="">Choose a colleague…</option>' + others.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  $('handMsg').value = '';
+}
+$('handBtn').addEventListener('click', async () => {
+  const c = current, to = $('handTo').value;
+  if (!to) return toast('Choose a colleague.');
+  if (!navigator.onLine) return toast('Handing over needs a connection.');
+  const dirty = $('myNotes').value.trim() !== clean(c.myNotes).trim() || JSON.stringify([...form.tags].sort()) !== JSON.stringify((c.tags || []).slice().sort()) || JSON.stringify(form.tasks) !== JSON.stringify(tasksOf(c));
+  if (dirty) return toast('Save your changes first, then hand over.');
+  if (pendingIds().has(c.id)) { await flushQueue(); if (pendingIds().has(c.id)) return toast('Wait until your changes have synced, then try again.'); }
+  const who = (people.find(p => p.id === to) || {}).name || 'your colleague';
+  if (!confirm('Hand over ' + clean(c.name) + ' to ' + who + '?')) return;
+  $('handBtn').disabled = true;
+  try {
+    const r = await api('transfer', { id: c.id, to, message: $('handMsg').value.trim() });
+    contacts = contacts.filter(x => x.id !== c.id);
+    if (!r.gone) { contacts = contacts.filter(x => x.id !== r.id); contacts.unshift(r); }
+    ls.set('ownerRecent', contacts);
+    toast('Handed over to ' + who);
+    location.hash = r.gone ? '' : 'c=' + encodeURIComponent(r.id);
+  } catch (e) { toast(e.message); }
+  $('handBtn').disabled = false;
+});
 async function mergeWith(x) {
   const c = current;
   if (!navigator.onLine) return toast('Merging needs a connection.');
@@ -1050,12 +1087,14 @@ function openContact(id) {
         ${phone && /^(\+|00)/.test(phone) ? `<a href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
         ${email ? `<a href="mailto:${esc(email)}">Email</a>` : ''}
       </div>
-      ${email ? `<div class="actions" style="margin-top:8px"><a href="#" id="fuMail">Follow-up email</a></div>` : ''}
+      <div class="actions" style="margin-top:8px">${email ? `<a href="#" id="fuMail">Follow-up email</a>` : ''}<a href="#" id="vcfBtn">Save to phone contacts</a></div>
     </div>`;
   $('addFields').hidden = true;
   if ($('fuMail')) $('fuMail').addEventListener('click', ev => { ev.preventDefault(); location.href = followUpMailto(current); });
+  $('vcfBtn').addEventListener('click', ev => { ev.preventDefault(); saveVcard(current); });
   $('deletePanel').hidden = false;
   renderTwins(c);
+  renderHandover(c);
   $('workPanel').hidden = false;
   $('eTitle').value = clean(c.title); $('eWebsite').value = clean(c.website);
   pendingPhotos = [];
@@ -1075,6 +1114,7 @@ function openAdd() {
   $('addFields').hidden = false;
   $('deletePanel').hidden = true;
   $('dupPanel').hidden = true;
+  $('handPanel').hidden = true;
   pendingPhotos = [];
   renderPhotos();
   ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
@@ -1367,6 +1407,45 @@ function fillTemplate(text, c) {
     .split('\n').filter((line, i, arr) => !(line.trim() === '' && /\{my\w+\}/.test((text.split('\n')[i] || '')))).join('\n')   // drop empty signature lines
     .replace(/\n{4,}/g, '\n\n\n');
 }
+/* ---------- save to the phone's contacts (vCard) ---------- */
+// Name, organisation, job title, phone, email, website and where you met. Your notes stay out:
+// the phone's address book often syncs to other services.
+function vcard(c) {
+  const v = x => String(x || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+  const name = clean(c.name).trim();
+  // "Cdr. Kees van der Berg" -> prefix "Cdr.", first "Kees", last "van der Berg"
+  const words = name.split(/\s+/), pre = [];
+  while (words.length > 1 && HONORIFICS.has(words[0].toLowerCase().replace(/\./g, ''))) pre.push(words.shift());
+  let cut = words.length > 1 ? words.length - 1 : words.length;
+  const particle = words.findIndex((w, i) => i > 0 && i < words.length - 1 && /^(van|von|de|der|den|du|da|di|del|della|le|la|ten|ter|te|op|in|'t|het|mc)$/i.test(w));
+  if (particle > 0) cut = particle;
+  const first = words.slice(0, cut).join(' '), last = words.slice(cut).join(' ');
+  const org = companyOf(c), phone = clean(c.phone).trim(), email = clean(c.email).trim(), web = webUrl(c.website);
+  const ev = eventsOf(c)[0];
+  const met = 'Met ' + (ev ? 'at ' + ev.name + ', ' : '') + new Date(c.time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0', 'N:' + v(last) + ';' + v(first) + ';;' + v(pre.join(' ')) + ';', 'FN:' + v(name)];
+  if (org && !org.guess) lines.push('ORG:' + v(org.text));
+  if (c.title) lines.push('TITLE:' + v(clean(c.title)));
+  if (phone) lines.push('TEL;TYPE=CELL:' + phone.replace(/[^\d+ ()-]/g, ''));
+  if (email) lines.push('EMAIL;TYPE=INTERNET:' + email);
+  if (web) lines.push('URL:' + web);
+  lines.push('NOTE:' + v(met));
+  lines.push('END:VCARD');
+  return lines.join('\r\n') + '\r\n';
+}
+async function saveVcard(c) {
+  const name = (clean(c.name).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'contact') + '.vcf';
+  const file = new File([vcard(c)], name, { type: 'text/vcard' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  // without a share menu: open the card, the phone offers "Add to contacts"
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
 function followUpMailto(c) {
   const t = fuTemplate();
   return 'mailto:' + encodeURIComponent(clean(c.email)) + '?subject=' + encodeURIComponent(fillTemplate(t.subject, c)) + '&body=' + encodeURIComponent(fillTemplate(t.body, c).replace(/\n/g, '\r\n'));

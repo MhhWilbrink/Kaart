@@ -1,5 +1,5 @@
 /* Service worker for the owner app: offline app shell + push notifications */
-const CACHE = 'owner-app-v18';
+const CACHE = 'owner-app-v19';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', '../config.json'];
 
 self.addEventListener('install', e => {
@@ -80,8 +80,9 @@ self.addEventListener('push', e => {
         url = './#followups'; tag = 'follow-ups';
       } else if (c) {
         const name = String(c.name || '').replace(/^'/, '');
-        title = (c.again ? 'Met again: ' : 'New contact: ') + name;
-        body = c.again ? 'Their new details were added to the existing contact.'
+        title = (c.handover ? 'Handed over to you: ' : c.again ? 'Met again: ' : 'New contact: ') + name;
+        body = c.handover ? 'From ' + c.handover + '. Tap to see the notes and follow-ups.'
+          : c.again ? 'Their new details were added to the existing contact.'
           : [String(c.company || '').replace(/^'/, ''), c.cardId ? 'via ' + c.cardId : ''].filter(Boolean).join(' · ') || 'Tap to add a note.';
         url = './#c=' + encodeURIComponent(c.id);
       }
