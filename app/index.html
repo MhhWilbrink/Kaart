@@ -474,7 +474,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.16.7';
+const APP_VERSION = '2.16.8';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -555,7 +555,13 @@ async function api(action, data = {}) {
   } catch (e) {
     throw new Error(e && e.name === 'AbortError' ? 'No answer from the server. Will try again.' : 'No connection. Will try again.');
   } finally { if (timer) clearTimeout(timer); }
-  const j = await res.json();
+  let j;
+  try { j = await res.json(); }
+  catch (e) {           // an HTML page instead of an answer: the Apps Script itself is broken or not published
+    serverDown = true; renderBanner();
+    throw new Error('The server is not working. Check the Apps Script (Code and Core) and publish a new version.');
+  }
+  if (serverDown) { serverDown = false; renderBanner(); }
   if (!j.ok) {
     if (j.error === 'SESSION_EXPIRED') { signOutLocal(); throw new Error('Please sign in again.'); }
     throw new Error(j.error || 'Something went wrong.');
@@ -770,10 +776,12 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
+let serverDown = false;
 function renderBanner() {
   const q = queue().length + photoQueue.length;
   $('netBanner').innerHTML = !navigator.onLine
     ? `<div class="banner offline">You're offline. Changes are saved on this phone and sync automatically.</div>`
+    : serverDown ? `<div class="banner offline">The server is not working${q ? ' (' + q + ' change' + (q > 1 ? 's' : '') + ' waiting)' : ''}. Changes are kept on this phone. Ask your administrator to check the Apps Script.</div>`
     : q ? `<div class="banner sync">${q} change${q > 1 ? 's' : ''} waiting to sync…</div>` : '';
 }
 
