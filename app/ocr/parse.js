@@ -195,8 +195,9 @@
       if (c) { out.company = c.text; conf.company = c.conf; guess.company = true; used.add(c.i); }
     }
     out.source = out.source || 'text';
-    // fields to check: the reader was not sure (below 80%), or the app guessed or corrected the value
-    out.check = ['name', 'company', 'title', 'email', 'phone', 'website'].filter(k => out[k] && (guess[k] || out.changed.includes(k) || (conf[k] != null && conf[k] < 80)));
+    // fields to check: the reader was not sure (below 90%), or the app guessed or corrected the value
+    const min = input.minConfidence || 90;
+    out.check = ['name', 'company', 'title', 'email', 'phone', 'website'].filter(k => out[k] && (guess[k] || out.changed.includes(k) || (conf[k] != null && conf[k] < min)));
     delete out.changed;
     return out;
   }
