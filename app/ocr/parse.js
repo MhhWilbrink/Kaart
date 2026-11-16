@@ -81,6 +81,7 @@
     return { name: n.length > 1 ? (n[1] + ' ' + n[0]).trim() : n[0], company: get('ORG'), title: '', email: get('EMAIL'), phone: get('TEL'), website: get('URL') };
   }
 
+  const SOCIAL = /(^|\.)(linkedin\.com|lnkd\.in|facebook\.com|fb\.me|instagram\.com|twitter\.com|x\.com|youtube\.com|youtu\.be|wa\.me|t\.me|xing\.com|calendly\.com|linktr\.ee)$/i;
   function parse(input) {
     const out = { name: '', company: '', title: '', email: '', phone: '', website: '', source: '' };
     const qr = input.qr || '';
@@ -90,9 +91,16 @@
     const conf = {}, guess = {};          // per field: reader confidence of its line, and fields the app guessed or changed
 
     // a QR code with a web address tells us the exact domain (optics11.com, not opticsil.com)
-    let qrHost = '';
+    // other QR codes: an email (mailto:, MATMSG:), a phone (tel:) or a social profile (LinkedIn, …).
+    // A profile link says nothing about the company's domain, so it is never used as the website.
+    let qrHost = '', qrEmail = '', qrPhone = '';
+    const qmail = /^(?:mailto:|MATMSG:TO:)([^\s?;&]+@[^\s?;&]+)/i.exec(qr);
+    if (qmail) { qrEmail = decodeURIComponent(qmail[1]).toLowerCase(); qrHost = qrEmail.split('@')[1]; }
+    const qtel = /^tel:([+\d][\d\s().-]{5,})/i.exec(qr);
+    if (qtel) qrPhone = qtel[1].trim();
     const qm = /^https?:\/\/(?:www\.)?([^/\s?#]+)/i.exec(qr);
-    if (qm) qrHost = qm[1].toLowerCase();
+    if (qm && SOCIAL.test(qm[1])) out.profile = qr.trim();
+    else if (qm) qrHost = qm[1].toLowerCase();
     const lines = (input.lines || []).map(l => ({ text: tidy(l.text).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0, conf: l.conf == null ? 100 : l.conf }))
       .filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
     const used = new Set();
@@ -164,6 +172,8 @@
     if (rank) out.title = [rank.charAt(0).toUpperCase() + rank.slice(1), out.title].filter(Boolean).join(', ');
 
     repair(out, qrHost);
+    if (qrEmail) { out.email = qrEmail; out.changed = out.changed.filter(k => k !== 'email'); conf.email = 100; guess.email = false; }
+    if (qrPhone) { out.phone = qrPhone; conf.phone = 100; guess.phone = false; }
     if (!out.company) {
       const ok = l => letters(l.text) >= 3 && !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim());
       const legal = free().find(l => ok(l) && LEGAL.test(l.text));

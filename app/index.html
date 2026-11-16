@@ -474,7 +474,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.16.1';
+const APP_VERSION = '2.16.2';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -1331,11 +1331,17 @@ function loadImage(file) {
 function qrFrom(img) {
   const fn = window.jsQRmod && (window.jsQRmod.default || window.jsQRmod);
   if (!fn) return '';
-  const s = Math.min(1, 1200 / Math.max(img.width, img.height));
-  const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-  const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
-  const hit = fn(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
-  return hit && hit.data ? hit.data : '';
+  // a small QR code on a full-size phone photo is only found at a higher resolution: try a few sizes
+  const long = Math.max(img.width, img.height);
+  for (const size of [1200, 2000, 3000]) {
+    const s = Math.min(1, size / long);
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+    const hit = fn(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
+    if (hit && hit.data) return hit.data;
+    if (s === 1) break;
+  }
+  return '';
 }
 
 // Shade the fields the scanner was not sure about; the shade goes away once you edit or confirm the field.
@@ -1413,6 +1419,7 @@ async function scanFile(file) {
     fill('aName', CardParse.nameCase(r.name || '')); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
     fill('aTitle', r.title); fill('aWebsite', r.website);
     markChecks(r.check || []);
+    if (r.profile && !$('myNotes').value.includes(r.profile)) $('myNotes').value = ($('myNotes').value ? $('myNotes').value + '\n' : '') + (/linkedin|lnkd/i.test(r.profile) ? 'LinkedIn: ' : 'Profile: ') + r.profile;
     rememberScan(r.source === 'qr' ? 'qr' : 'ocr', r.check || [], Math.round((Date.now() - t0) / 1000));
     $('aSource').value = 'badge';
     const texts = r.source === 'qr'

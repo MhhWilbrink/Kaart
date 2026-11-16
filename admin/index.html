@@ -331,6 +331,7 @@
     </form>
   </section>
 
+  <p class="hint" id="appVersionInfo" style="text-align:center;margin-top:24px"></p>
   <div id="toast"></div>
 </div>
 
@@ -467,6 +468,7 @@ async function openApp(userId) {
   $('loginView').hidden = true;
   $('appView').hidden = false;
   $('versionInfo').textContent = 'Version ' + (state.version || '');
+  postApi('setupStatus').then(st => { $('appVersionInfo').textContent = 'Version ' + st.version; }).catch(() => {});
   document.querySelectorAll('nav [data-admin]').forEach(b => b.hidden = !isAdmin());
   const active = document.querySelector('nav button.active');
   if (active && active.hidden) document.querySelector('nav [data-tab=profile]').click();
