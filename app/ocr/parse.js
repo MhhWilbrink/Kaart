@@ -86,19 +86,25 @@
     const qr = input.qr || '';
     if (/BEGIN:VCARD/i.test(qr)) Object.assign(out, fromVcard(qr), { source: 'qr' });
     else if (/^MECARD:/i.test(qr)) Object.assign(out, fromMecard(qr), { source: 'qr' });
-    if (out.source === 'qr' && out.name) return out;
+    if (out.source === 'qr' && out.name) { out.check = []; return out; }
+    const conf = {}, guess = {};          // per field: reader confidence of its line, and fields the app guessed or changed
 
     // a QR code with a web address tells us the exact domain (optics11.com, not opticsil.com)
     let qrHost = '';
     const qm = /^https?:\/\/(?:www\.)?([^/\s?#]+)/i.exec(qr);
     if (qm) qrHost = qm[1].toLowerCase();
-    const lines = (input.lines || []).map(l => ({ text: tidy(l.text).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0 }))
+    const lines = (input.lines || []).map(l => ({ text: tidy(l.text).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0, conf: l.conf == null ? 100 : l.conf }))
       .filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
     const used = new Set();
     const all = lines.map(l => l.text).join('\n');
 
     const em = all.match(EMAIL);
-    if (em) out.email = em[0].replace(/[.,;]+$/, '').toLowerCase();
+    if (em) {
+      out.email = em[0].replace(/[.,;]+$/, '').toLowerCase();
+      const li = lines.find(l => l.text.includes(em[0]));
+      conf.email = li ? li.conf : 100;
+      if (/[&®]/.test((input.lines || []).map(l => l.text).join(' '))) guess.email = true;
+    }
 
     // phone numbers: mobile first, then landline; never fax
     const phones = [];
@@ -108,16 +114,16 @@
       const t = l.text.replace(SKIP, '');
       const p = phoneFrom(t);
       if (p && (p.replace(/\D/g, '').length / Math.max(1, t.replace(/\s/g, '').length)) > 0.5) {
-        phones.push({ p, mobile: /^\s*(mob|mobile|mobiel|mobil|gsm|cell|m)\b/i.test(l.text) || MOBILE.test(p) });
+        phones.push({ p, conf: l.conf, mobile: /^\s*(mob|mobile|mobiel|mobil|gsm|cell|m)\b/i.test(l.text) || MOBILE.test(p) });
         used.add(i);
       }
     });
-    if (phones.length) out.phone = (phones.find(x => x.mobile) || phones[0]).p;
+    if (phones.length) { const ph = phones.find(x => x.mobile) || phones[0]; out.phone = ph.p; conf.phone = ph.conf; }
 
     lines.forEach((l, i) => {
       if (out.website || EMAIL.test(l.text)) return;
       const w = l.text.match(URLRX);
-      if (w && (/www\.|https?:|\//i.test(w[0]) || l.text.trim().length <= w[0].length + 2)) { out.website = w[0]; used.add(i); }
+      if (w && (/www\.|https?:|\//i.test(w[0]) || l.text.trim().length <= w[0].length + 2)) { out.website = w[0]; conf.website = l.conf; used.add(i); }
     });
 
     // labelled lines ("Name: …") on some badges
@@ -126,7 +132,7 @@
       if (!m) return;
       const v = l.text.slice(m[0].length);
       const k = m[1].toLowerCase();
-      if (/name|naam/.test(k) && !out.name) out.name = v;
+      if (/name|naam/.test(k) && !out.name) { out.name = v; conf.name = l.conf; }
       else if (/company|bedrijf|organi/.test(k) && !out.company) out.company = v;
       else if (/title|functie/.test(k) && !out.title) out.title = v;
       used.add(i);
@@ -138,17 +144,20 @@
       // the biggest text that looks like a name (after taking off a rank such as "brigadir" or "Cdr")
       const cands = free().map(l => Object.assign(l, splitRank(l.text))).filter(l => looksLikeName(l.rest))
         .sort((x, y) => y.h - x.h || (y.rank ? 1 : 0) - (x.rank ? 1 : 0) || x.i - y.i);
-      if (cands.length) { out.name = nameCase(cands[0].rest); rank = cands[0].rank; nameIdx = cands[0].i; used.add(nameIdx); }
+      if (cands.length) {
+        out.name = nameCase(cands[0].rest); rank = cands[0].rank; nameIdx = cands[0].i; used.add(nameIdx); conf.name = cands[0].conf;
+        if (cands[1] && cands[1].h > cands[0].h * 0.85) guess.name = true;        // two lines look like a name: not sure which
+      }
     } else out.name = nameCase(out.name);
 
     if (!out.title) {
       const t = free().find(l => TITLE.test(l.text) && !/\d|@/.test(l.text) && l.text.length <= 80 && orgLevel(l.text) > 1);
-      if (t) { out.title = t.text; used.add(t.i); }
+      if (t) { out.title = t.text; conf.title = t.conf; used.add(t.i); }
       else if (nameIdx >= 0) {
         // no known job word: the line right under the name usually is the job title
         const next = lines[nameIdx + 1];
         if (next && !used.has(nameIdx + 1) && next.text !== next.text.toUpperCase() && !/\d|@|www/i.test(next.text) && !LEGAL.test(next.text) && orgLevel(next.text) > 2 && letters(next.text) >= 3 && next.text.length <= 80) {
-          out.title = next.text; used.add(nameIdx + 1);
+          out.title = next.text; conf.title = next.conf; guess.title = true; used.add(nameIdx + 1);
         }
       }
     }
@@ -160,7 +169,7 @@
       const legal = free().find(l => ok(l) && LEGAL.test(l.text));
       const org = free().filter(l => ok(l) && orgLevel(l.text) < ORG.length).sort((x, y) => orgLevel(x.text) - orgLevel(y.text) || x.i - y.i)[0];
       const c = legal || org;
-      if (c) { out.company = c.text; used.add(c.i); }
+      if (c) { out.company = c.text; conf.company = c.conf; if (!legal) guess.company = orgLevel(c.text) > 1; used.add(c.i); }
     }
     const domainWord = () => {
       const host = out.email.split('@')[1] || out.website.replace(/^(https?:\/\/)?(www\.)?/i, '').split('/')[0] || '';
@@ -174,6 +183,7 @@
         const key = word.replace(/[^a-z0-9]/gi, '').toLowerCase();
         const hit = free().find(l => l.text.toLowerCase().replace(/[^a-z0-9]/g, '').includes(key) && !GENERIC.test(l.text));
         out.company = hit ? hit.text : (word.length <= 5 ? word.toUpperCase() : word.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+        conf.company = hit ? hit.conf : 100; guess.company = true;      // taken from the email address
         if (hit) used.add(hit.i);
       }
     }
@@ -182,14 +192,19 @@
       const BADGE = /^(visitor|exhibitor|speaker|delegate|press|media|staff|crew|organi[sz]er|vip|guest|attendee|contractor|bezoeker|standhouder)$/i;
       const c = free().filter(l => !/\d|@|www/i.test(l.text) && !BADGE.test(l.text) && !GENERIC.test(l.text) && letters(l.text) >= 3 && l.text.length <= 60)
         .sort((x, y) => y.h - x.h || x.i - y.i)[0];
-      if (c) { out.company = c.text; used.add(c.i); }
+      if (c) { out.company = c.text; conf.company = c.conf; guess.company = true; used.add(c.i); }
     }
     out.source = out.source || 'text';
+    // fields to check: the reader was not sure (below 80%), or the app guessed or corrected the value
+    out.check = ['name', 'company', 'title', 'email', 'phone', 'website'].filter(k => out[k] && (guess[k] || out.changed.includes(k) || (conf[k] != null && conf[k] < 80)));
+    delete out.changed;
     return out;
   }
 
   // Fix typical misreads in email and web address using what else is on the card.
   function repair(out, qrHost) {
+    out.changed = [];
+    const before = { email: out.email, website: out.website };
     const site = out.website.replace(/^(https?:\/\/)?(www\.)?/i, '').split('/')[0].toLowerCase();
     let [local, host] = out.email ? out.email.split('@') : ['', ''];
     // 1. the domain: trust the QR code, then the website, when they are nearly the same
@@ -214,6 +229,8 @@
       }).join('');
     }
     if (out.email) out.email = local + '@' + host;
+    if (out.email !== before.email) out.changed.push('email');
+    if (out.website !== before.website) out.changed.push('website');
   }
 
   root.CardParse = { parse, looksLikeName, nameCase };

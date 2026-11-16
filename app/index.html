@@ -91,6 +91,9 @@
   #viewer .bar { display:flex; gap:10px; padding:12px 14px; }
   #viewer .bar .btn { background:#1f2937; }
   #viewer .bar .btn.del { background:#7f1d1d; }
+  input.check, textarea.check { background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 6px, #fdefb2 6px, #fdefb2 12px); border-color:#e0a800; }
+  .checknote { display:flex; align-items:center; gap:6px; font-size:.8rem; color:#7a5b00; margin:2px 0 8px; }
+  .checknote i { width:22px; height:12px; border:1px solid #e0a800; border-radius:3px; background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 3px, #fdefb2 3px, #fdefb2 6px); }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -156,6 +159,7 @@
         <div id="lineTargets" hidden style="margin-top:8px;padding:8px;background:#f3f4f6;border-radius:10px"><div class="small muted" style="margin-bottom:6px">Put this line in:</div><div class="chips" id="lineTargetsBtns"></div></div>
       </details>
       <h2 style="margin-top:12px">Contact</h2>
+      <div class="checknote" id="checkNote" hidden><i></i><span>Shaded fields: the scanner was not sure. Please check them.</span></div>
       <label for="aName">Name *</label>
       <input id="aName" autocomplete="off">
       <label for="aPhone">Phone</label>
@@ -321,7 +325,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.8.1';
+const APP_VERSION = '2.9.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -640,7 +644,7 @@ function openAdd() {
   ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
   $('workPanel').hidden = true;
   $('scanStatus').textContent = 'Reads the text on your phone. Nothing is sent to other services.';
-  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanQrLink').hidden = true; $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
+  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanQrLink').hidden = true; markChecks([]); $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
   $('myNotes').value = ''; $('followDate').value = '';
   $('saveBtn').textContent = 'Add contact';
   renderChips();
@@ -817,6 +821,17 @@ function qrFrom(img) {
   return hit && hit.data ? hit.data : '';
 }
 
+// Shade the fields the scanner was not sure about; the shade goes away once you edit or confirm the field.
+const CHECK_FIELDS = { name: 'aName', company: 'aCompany', title: 'aTitle', email: 'aEmail', phone: 'aPhone', website: 'aWebsite' };
+function markChecks(list) {
+  Object.entries(CHECK_FIELDS).forEach(([k, id]) => $(id).classList.toggle('check', list.includes(k) && !!$(id).value));
+  $('checkNote').hidden = !document.querySelector('#addFields .check');
+}
+Object.values(CHECK_FIELDS).forEach(id => $(id).addEventListener('input', () => {
+  $(id).classList.remove('check');
+  $('checkNote').hidden = !document.querySelector('#addFields .check');
+}));
+
 // Tap a recognised line, then the field it belongs in: fixes a wrong guess in two taps.
 const LINE_TARGETS = [['aName', 'Name'], ['aCompany', 'Company'], ['aTitle', 'Job title'], ['aEmail', 'Email'], ['aPhone', 'Phone'], ['aWebsite', 'Website'], ['myNotes', 'Notes']];
 let pickedLine = null;
@@ -841,6 +856,7 @@ LINE_TARGETS.forEach(([id, label]) => {
     if (id === 'aName') v = CardParse.nameCase(v);
     if (id === 'myNotes') $(id).value = ($(id).value ? $(id).value + '\n' : '') + v;
     else $(id).value = v;
+    $(id).classList.remove('check'); $('checkNote').hidden = !document.querySelector('#addFields .check');
     $('lineTargets').hidden = true; pickedLine = null;
     $('scanLines').querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
     toast(label + ' filled in');
@@ -875,6 +891,7 @@ $('scanInput').addEventListener('change', async e => {
     const fill = (id, v) => { if (v) $(id).value = v; };
     fill('aName', CardParse.nameCase(r.name || '')); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
     fill('aTitle', r.title); fill('aWebsite', r.website);
+    markChecks(r.check || []);
     $('aSource').value = 'badge';
     const texts = r.source === 'qr'
       ? qr.split(/\r?\n|;(?=[A-Z]+:)/).filter(l => l && !/^(BEGIN|END|VERSION|MECARD|N|PRODID|REV|UID)[:;]/i.test(l)).map(l => l.replace(/^[A-Z-]+(;[^:]*)?:/i, '').replace(/;+/g, ' ').trim()).filter(l => l && !/^(TEL|ADR|EMAIL|URL|ORG|TITLE|FN|NOTE|CELL|WORK|HOME|VOICE|FAX|PREF|INTERNET|TYPE|[ ,=])+$/i.test(l))
