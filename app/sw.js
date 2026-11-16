@@ -1,5 +1,5 @@
 /* Service worker for the owner app: offline app shell + push notifications */
-const CACHE = 'owner-app-v15';
+const CACHE = 'owner-app-v16';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', '../config.json'];
 
 self.addEventListener('install', e => {
@@ -52,16 +52,17 @@ function idbGet(key) {
   });
 }
 
-// The push itself carries no data. We fetch the newest contact from your own backend,
-// so names never pass through Apple's or Google's push servers.
-async function newestContact() {
+// The push itself carries no data. We ask your own backend what it is about (a new contact, or the
+// morning follow-up reminder), so names never pass through Apple's or Google's push servers.
+async function pushInfo() {
   const [token, endpoint] = await Promise.all([idbGet('token'), idbGet('endpoint')]);
   if (!token || !endpoint) return null;
-  const res = await fetch(endpoint, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'latest', token })
-  });
-  const j = await res.json();
+  const ask = async action => {
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token }) });
+    return res.json();
+  };
+  let j = await ask('pushInfo');
+  if (!j.ok && j.error === 'unknown_action') j = await ask('latest');      // backend older than 2.12
   return j.ok ? j.data : null;
 }
 
@@ -70,9 +71,14 @@ self.addEventListener('push', e => {
     let title = 'New contact';
     let body = 'Someone shared their details with you. Tap to add a note.';
     let url = './';
+    let tag = 'new-contact';
     try {
-      const c = await newestContact();
-      if (c) {
+      const c = await pushInfo();
+      if (c && c.type === 'digest') {
+        title = c.count === 1 ? '1 follow-up for today' : c.count + ' follow-ups for today';
+        body = (c.names || []).join(', ') + (c.count > (c.names || []).length ? ' and more' : '');
+        url = './#followups'; tag = 'follow-ups';
+      } else if (c) {
         const name = String(c.name || '').replace(/^'/, '');
         title = 'New contact: ' + name;
         body = [String(c.company || '').replace(/^'/, ''), c.cardId ? 'via ' + c.cardId : ''].filter(Boolean).join(' · ') || 'Tap to add a note.';
@@ -80,7 +86,7 @@ self.addEventListener('push', e => {
       }
     } catch (err) { /* offline or signed out: show the generic notification */ }
     await self.registration.showNotification(title, {
-      body, tag: 'new-contact', renotify: true, icon: 'icon-192.png', badge: 'icon-192.png', data: { url }
+      body, tag, renotify: true, icon: 'icon-192.png', badge: 'icon-192.png', data: { url }
     });
   })());
 });

@@ -103,6 +103,31 @@
   .pickrow .info b { display:block; font-weight:600; }
   .pickrow .opts { color:var(--muted); font-size:.8rem; }
   .badge.team { background:#e0e7ff; color:#3730a3; }
+  .tabs { display:flex; gap:4px; background:#e5e7eb; border-radius:12px; padding:3px; margin:0 0 10px; }
+  .tabs button { flex:1; border:0; background:none; padding:9px 6px; border-radius:9px; font:inherit; font-weight:600; font-size:.92rem; color:#374151; cursor:pointer; }
+  .tabs button.on { background:#fff; color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .tabs .num { display:inline-block; min-width:20px; padding:1px 6px; margin-left:4px; border-radius:999px; background:#dc2626; color:#fff; font-size:.75rem; }
+  .tgroup { margin:14px 2px 6px; font-size:.78rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .tgroup.late { color:#b91c1c; }
+  .task { display:flex; gap:10px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:8px; }
+  .task input[type=checkbox] { width:22px; height:22px; margin:2px 0 0; flex:0 0 auto; accent-color:var(--primary); }
+  .task .tbody { flex:1; min-width:0; cursor:pointer; }
+  .task .ttext { font-weight:600; }
+  .task.done .ttext { text-decoration:line-through; color:var(--muted); font-weight:400; }
+  .task .twho { font-size:.88rem; margin-top:2px; }
+  .task .tmeta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; }
+  .task .tdue { font-size:.8rem; color:var(--muted); }
+  .task .tdue.late { color:#b91c1c; font-weight:600; }
+  .task .tacts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .task .tacts a, .task .tacts button { font-size:.8rem; padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--primary); text-decoration:none; font-weight:600; cursor:pointer; }
+  .badge.show { background:#ede9fe; color:#5b21b6; font-weight:600; }
+  .trow { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--line); }
+  .trow:first-child { border-top:0; }
+  .trow input[type=checkbox] { width:20px; height:20px; margin:0; accent-color:var(--primary); }
+  .trow .tt { flex:1; min-width:0; }
+  .trow.done .tt { text-decoration:line-through; color:var(--muted); }
+  .trow input[type=date] { width:auto; padding:4px 6px; font-size:.8rem; }
+  .trow .x { border:0; background:none; color:var(--muted); font-size:1.1rem; cursor:pointer; padding:0 4px; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -137,6 +162,15 @@
       <button class="iconbtn" id="settingsBtn" aria-label="Settings">Settings</button>
     </header>
     <div id="netBanner"></div>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabContacts" role="tab">Contacts</button>
+      <button type="button" id="tabTasks" role="tab">Follow-ups<span class="num" id="taskNum" hidden></span></button>
+    </div>
+    <div id="taskView" hidden>
+      <div class="filters" id="taskFilters"></div>
+      <div id="taskList"></div>
+    </div>
+    <div id="contactView">
     <div class="search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input type="search" id="q" placeholder="Search name or company" autocomplete="off" aria-label="Search name or company">
@@ -144,6 +178,7 @@
     <div class="filters" id="filters"></div>
     <div class="listbar"><span id="count"></span><button class="linkbtn" id="exportBtn" type="button">Export</button></div>
     <div id="list"></div>
+    </div>
   </section>
 
   <!-- DETAIL / ADD -->
@@ -213,11 +248,15 @@
     </div>
     <div id="pickPanels"></div>
     <div class="panel">
-      <h2>Follow up</h2>
-      <div class="chips" id="followChips"></div>
-      <input type="date" id="followDate" style="margin-top:10px">
+      <h2>Follow-ups</h2>
+      <div id="taskRows"></div>
+      <label for="taskText" style="margin-top:10px">New follow-up</label>
+      <input id="taskText" placeholder="e.g. Send quote, call back" maxlength="120" autocomplete="off">
+      <div class="chips" id="followChips" style="margin-top:8px"></div>
+      <input type="date" id="followDate" style="margin-top:8px">
+      <button class="btn ghost" type="button" id="taskAdd" style="margin-top:8px;width:100%">Add follow-up</button>
       <div id="calRow" hidden>
-        <p class="muted small" style="margin:10px 0 6px">Put this follow-up in your calendar (9:00 on that day):</p>
+        <p class="muted small" style="margin:10px 0 6px">Put the next follow-up in your calendar (9:00 on that day):</p>
         <div class="chips">
           <button type="button" class="chip" id="calIcs">iPhone / Outlook app</button>
           <button type="button" class="chip" id="calOutlook">Outlook 365</button>
@@ -268,6 +307,7 @@
         <label for="pickOptions">Options, one per line</label>
         <textarea id="pickOptions" rows="4" placeholder="Product A&#10;Product B&#10;Service"></textarea>
         <label class="check-row"><input type="checkbox" id="pickMulti" checked> More than one answer allowed</label>
+        <label class="check-row"><input type="checkbox" id="pickTask"> Tapping an answer adds a follow-up (in 1 week)</label>
         <div id="pickEventsRow">
           <label>Only show at these events <span class="muted">(none = always)</span></label>
           <div class="chips" id="pickEvents"></div>
@@ -352,7 +392,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.11.0';
+const APP_VERSION = '2.12.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -388,6 +428,8 @@ let token = ls.get('ownerToken', null);
 let contacts = ls.get('ownerRecent', []);
 let seenUpTo = ls.get('ownerSeen', '');
 let events = ls.get('ownerEvents', []);
+let listMode = 'contacts';                  // 'contacts' or 'tasks' (the Follow-ups tab)
+let taskFilter = '';                        // event id shown in the Follow-ups tab ('' = all)
 let me = ls.get('ownerMe', null);
 let picks = ls.get('ownerPicks', { team: [], mine: null });   // quick-pick sets: team (by administrators) and your own           // your own card details and follow-up template
 let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
@@ -516,6 +558,7 @@ function route() {
   if (h.startsWith('#c=')) return openContact(decodeURIComponent(h.slice(3)));
   if (h === '#add') return openAdd();
   if (h === '#settings') return openSettings();
+  listMode = h === '#followups' ? 'tasks' : 'contacts';
   renderList(); show('vList');
 }
 window.addEventListener('hashchange', route);
@@ -574,6 +617,8 @@ function renderFilters() {
 
 function renderList() {
   renderBanner();
+  renderTabs();
+  if (listMode === 'tasks') return renderTaskList();
   renderFilters();
   const list = $('list');
   const shown = visibleContacts();
@@ -604,6 +649,121 @@ function renderList() {
     list.appendChild(b);
   });
 }
+/* ---------- Follow-ups tab: every open follow-up of your contacts, with the trade show it came from ---------- */
+function allTasks() {
+  const out = [];
+  contacts.forEach(c => {
+    if (c.ownerName) return;                                   // someone else's contact (shared address book)
+    const ev = eventsOf(c)[0];
+    tasksOf(c).forEach(t => out.push({ t, c, ev }));
+  });
+  return out;
+}
+function renderTabs() {
+  const today = todayStr();
+  const due = allTasks().filter(x => !x.t.done && x.t.due && x.t.due <= today).length;
+  $('taskNum').hidden = !due; $('taskNum').textContent = due;
+  $('tabContacts').classList.toggle('on', listMode === 'contacts');
+  $('tabTasks').classList.toggle('on', listMode === 'tasks');
+  $('taskView').hidden = listMode !== 'tasks';
+  $('contactView').hidden = listMode === 'tasks';
+  $('exportBtn').hidden = listMode === 'tasks' || !contacts.length;
+  document.querySelector('#vList h1').textContent = listMode === 'tasks' ? 'Follow-ups' : 'Contacts';
+}
+$('tabContacts').addEventListener('click', () => { if (location.hash) location.hash = ''; else { listMode = 'contacts'; renderList(); } });
+$('tabTasks').addEventListener('click', () => { location.hash = 'followups'; });
+
+// Change a contact from the Follow-ups tab (tick off, snooze) without opening it; works offline like any edit.
+async function quickUpdate(c, change) {
+  const tasks = tasksOf(c).map(t => Object.assign({}, t));
+  const notes = change(tasks, clean(c.myNotes)) ;
+  const data = { id: c.id, myNotes: notes, tags: c.tags || [], tasks, followUp: nextDue(tasks), title: clean(c.title), website: clean(c.website) };
+  Object.assign(c, data);
+  ls.set('ownerRecent', contacts);
+  enqueue({ action: 'update', data });
+  renderList();
+  await flushQueue();
+}
+
+function renderTaskList() {
+  const today = todayStr(), week = todayStr(7);
+  const items = allTasks();
+  // event filter: only shows that have follow-ups
+  const evs = events.filter(e => items.some(x => x.ev && x.ev.id === e.id && !x.t.done));
+  if (taskFilter && !evs.some(e => e.id === taskFilter)) taskFilter = '';
+  const fb = $('taskFilters'); fb.innerHTML = '';
+  if (evs.length) {
+    fb.appendChild(chip('All shows', !taskFilter, '', () => { taskFilter = ''; renderList(); }));
+    evs.forEach(e => fb.appendChild(chip(e.name, taskFilter === e.id, '', () => { taskFilter = taskFilter === e.id ? '' : e.id; renderList(); })));
+  }
+  const shown = items.filter(x => !taskFilter || (x.ev && x.ev.id === taskFilter));
+  const open = shown.filter(x => !x.t.done).sort((a, b) => ((a.t.due || '9999') < (b.t.due || '9999') ? -1 : (a.t.due || '9999') > (b.t.due || '9999') ? 1 : 0));
+  const groups = [
+    ['Overdue', x => x.t.due && x.t.due < today, 'late'],
+    ['Today', x => x.t.due === today],
+    ['Tomorrow', x => x.t.due === todayStr(1)],
+    ['This week', x => x.t.due > todayStr(1) && x.t.due <= week],
+    ['Later', x => x.t.due > week],
+    ['No date', x => !x.t.due]
+  ];
+  const list = $('taskList'); list.innerHTML = '';
+  if (!open.length) list.innerHTML = `<div class="empty">${items.length ? 'All follow-ups are done.' : 'No follow-ups yet.<br>Open a contact and add one under <b>Follow-ups</b>, or tap a next step such as "Send quote".'}</div>`;
+  groups.forEach(([label, test, cls]) => {
+    const g = open.filter(test);
+    if (!g.length) return;
+    const h = document.createElement('div'); h.className = 'tgroup' + (cls ? ' ' + cls : ''); h.textContent = label + ' · ' + g.length;
+    list.appendChild(h);
+    g.forEach(x => list.appendChild(taskCard(x)));
+  });
+  const done = shown.filter(x => x.t.done && (!x.t.doneAt || x.t.doneAt >= todayStr(-14)));
+  if (done.length) {
+    const d = document.createElement('details');
+    d.innerHTML = `<summary class="tgroup" style="cursor:pointer">Done (last 2 weeks) · ${done.length}</summary>`;
+    done.forEach(x => d.appendChild(taskCard(x)));
+    list.appendChild(d);
+  }
+}
+
+function taskCard({ t, c, ev }) {
+  const el = document.createElement('div'); el.className = 'task' + (t.done ? ' done' : '');
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Done: ' + t.text);
+  cb.addEventListener('change', () => quickUpdate(c, (tasks, notes) => {
+    const x = tasks.find(y => y.id === t.id); if (!x) return notes;
+    x.done = cb.checked; x.doneAt = cb.checked ? todayStr() : '';
+    if (cb.checked) toast('Done: ' + t.text);
+    return cb.checked ? doneNote(notes, x) : notes;
+  }));
+  const body = document.createElement('div'); body.className = 'tbody';
+  const co = companyOf(c);
+  const late = !t.done && t.due && t.due < todayStr();
+  body.innerHTML = `<div class="ttext">${esc(t.text)}</div>
+    <div class="twho">${esc(clean(c.name))}${co ? ' · ' + esc(co.text) : ''}</div>
+    <div class="tmeta">${ev ? `<span class="badge show">${esc(ev.name)}</span>` : ''}<span class="tdue${late ? ' late' : ''}">${esc(t.done ? 'Done ' + (t.doneAt ? fmtDate(t.doneAt) : '') : dueLabel(t.due))}</span></div>`;
+  body.addEventListener('click', () => { location.hash = 'c=' + encodeURIComponent(c.id); });
+  if (!t.done) {
+    const acts = document.createElement('div'); acts.className = 'tacts';
+    const email = clean(c.email), phone = clean(c.phone);
+    if (email) { const a = document.createElement('a'); a.href = '#'; a.textContent = 'Email'; a.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); location.href = followUpMailto(c); }); acts.appendChild(a); }
+    if (phone) { const a = document.createElement('a'); a.href = 'tel:' + phone.replace(/[^\d+]/g, ''); a.textContent = 'Call'; a.addEventListener('click', e => e.stopPropagation()); acts.appendChild(a); }
+    [['+1 day', 1], ['+1 week', 7]].forEach(([label, days]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        quickUpdate(c, (tasks, notes) => {
+          const x = tasks.find(y => y.id === t.id);
+          if (x) { const base = x.due && x.due > todayStr() ? new Date(x.due + 'T12:00:00') : new Date(); base.setDate(base.getDate() + days); x.due = base.toLocaleDateString('sv-SE'); }
+          return notes;
+        });
+        toast('Moved to ' + fmtDate(t.due && t.due > todayStr() ? (() => { const d = new Date(t.due + 'T12:00:00'); d.setDate(d.getDate() + days); return d.toLocaleDateString('sv-SE'); })() : todayStr(days)));
+      });
+      acts.appendChild(b);
+    });
+    body.appendChild(acts);
+  }
+  el.append(cb, body);
+  return el;
+}
+
 let qTimer;
 $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(renderList, 120); });
 
@@ -638,7 +798,7 @@ function chip(label, on, extraClass, onClick) {
 }
 
 /* ---------- quick picks ---------- */
-const STARTER = [{ id: 'next', name: 'Next steps', options: ACTIONS, multi: true, events: [] }];
+const STARTER = [{ id: 'next', name: 'Next steps', options: ACTIONS, multi: true, events: [], task: true }];
 const mySets = () => (Array.isArray(picks.mine) ? picks.mine : STARTER);
 const allSets = () => (picks.team || []).map(g => Object.assign({ team: true }, g)).concat(mySets());
 const pickTag = (g, o) => g.name + ': ' + o;
@@ -659,6 +819,7 @@ function renderPicks() {
       if (!g.multi) g.options.forEach(x => { form.tags.delete(pickTag(g, x)); form.tags.delete(x); });
       form.tags.delete(o);
       if (was) form.tags.delete(pickTag(g, o)); else form.tags.add(pickTag(g, o));
+      if (!was && g.task && addTask(o, todayStr(7))) toast('Follow-up added: ' + o + ' (in 1 week)');
       renderChips();
     })));
     panel.appendChild(row); box.appendChild(panel);
@@ -673,12 +834,69 @@ function renderChips() {
   const f = $('followChips'); f.innerHTML = '';
   FOLLOW.forEach(([label, days]) => {
     const d = todayStr(days);
-    f.appendChild(chip(label, form.followUp === d, '', () => { form.followUp = form.followUp === d ? '' : d; $('followDate').value = form.followUp; renderChips(); }));
+    f.appendChild(chip(label, form.newDue === d, '', () => { form.newDue = form.newDue === d ? '' : d; $('followDate').value = form.newDue; renderChips(); }));
   });
-  if (form.followUp) f.appendChild(chip('Clear', false, '', () => { form.followUp = ''; $('followDate').value = ''; renderChips(); }));
-  $('calRow').hidden = !form.followUp;
+  f.appendChild(chip('No date', !form.newDue, '', () => { form.newDue = ''; $('followDate').value = ''; renderChips(); }));
+  renderTaskRows();
 }
-$('followDate').addEventListener('change', e => { form.followUp = e.target.value; renderChips(); });
+$('followDate').addEventListener('change', e => { form.newDue = e.target.value; renderChips(); });
+
+/* ---------- follow-ups on a contact ---------- */
+const nextDue = tasks => tasks.filter(t => !t.done && t.due).map(t => t.due).sort()[0] || '';
+const shortId = () => Math.random().toString(36).slice(2, 8);
+// contacts from before version 2.12 have one follow-up date and no list
+function tasksOf(c) {
+  const t = Array.isArray(c.tasks) ? c.tasks : [];
+  return t.length || !c.followUp ? t : [{ id: 'f' + String(c.id).slice(0, 5).replace(/[^0-9a-z]/gi, '0'), text: 'Follow up', due: c.followUp, done: false, doneAt: '' }];
+}
+function dueLabel(d) {
+  if (!d) return 'No date';
+  const today = todayStr(), tom = todayStr(1);
+  if (d < today) return 'Overdue · ' + fmtDate(d);
+  if (d === today) return 'Today';
+  if (d === tom) return 'Tomorrow';
+  return fmtDate(d);
+}
+function doneNote(notes, t) {
+  const line = 'Done ' + new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ': ' + t.text;
+  return notes.includes(line) ? notes : (notes ? notes + '\n' : '') + line;
+}
+function renderTaskRows() {
+  const box = $('taskRows'); box.innerHTML = '';
+  form.followUp = nextDue(form.tasks);
+  $('calRow').hidden = !form.followUp;
+  const order = form.tasks.slice().sort((a, b) => (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : 1));
+  if (!order.length) box.innerHTML = '<p class="small muted" style="margin:0">No follow-ups yet.</p>';
+  order.forEach(t => {
+    const row = document.createElement('div'); row.className = 'trow' + (t.done ? ' done' : '');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Done');
+    cb.addEventListener('change', () => {
+      t.done = cb.checked; t.doneAt = cb.checked ? todayStr() : '';
+      if (cb.checked) $('myNotes').value = doneNote($('myNotes').value, t);
+      renderTaskRows();
+    });
+    const tt = document.createElement('div'); tt.className = 'tt'; tt.textContent = t.text;
+    const di = document.createElement('input'); di.type = 'date'; di.value = t.due || ''; di.setAttribute('aria-label', 'Date');
+    di.addEventListener('change', () => { t.due = di.value; renderTaskRows(); });
+    const x = document.createElement('button'); x.className = 'x'; x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove');
+    x.addEventListener('click', () => { form.tasks = form.tasks.filter(y => y !== t); renderTaskRows(); });
+    row.append(cb, tt, di, x); box.appendChild(row);
+  });
+}
+function addTask(text, due) {
+  text = String(text || '').trim();
+  if (!text) return false;
+  if (form.tasks.some(t => !t.done && t.text.toLowerCase() === text.toLowerCase())) return false;
+  form.tasks.push({ id: shortId(), text, due: due || '', done: false, doneAt: '' });
+  renderTaskRows();
+  return true;
+}
+$('taskAdd').addEventListener('click', () => {
+  const text = $('taskText').value.trim();
+  if (!text) { toast('Type what needs to happen, e.g. "Send quote".'); $('taskText').focus(); return; }
+  if (addTask(text, form.newDue)) { $('taskText').value = ''; toast('Follow-up added'); }
+});
+$('taskText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('taskAdd').click(); } });
 
 function openContact(id) {
   const c = contacts.find(x => x.id === id);
@@ -690,7 +908,7 @@ function openContact(id) {
     return;
   }
   current = c;
-  form = { tags: new Set(c.tags), followUp: c.followUp || '', myNotes: clean(c.myNotes) };
+  form = { tags: new Set(c.tags), followUp: c.followUp || '', myNotes: clean(c.myNotes), tasks: tasksOf(c).map(t => Object.assign({}, t)), newDue: todayStr(7) };
   if (c.time > seenUpTo) { seenUpTo = c.time; ls.set('ownerSeen', seenUpTo); }
   $('dTitle').textContent = clean(c.name);
   const phone = clean(c.phone), email = clean(c.email);
@@ -718,7 +936,7 @@ function openContact(id) {
   pendingPhotos = [];
   renderPhotos();
   $('myNotes').value = form.myNotes;
-  $('followDate').value = form.followUp;
+  $('followDate').value = form.newDue; $('taskText').value = '';
   $('saveBtn').textContent = 'Save';
   renderChips();
   show('vDetail');
@@ -726,7 +944,7 @@ function openContact(id) {
 
 function openAdd() {
   current = { isNew: true, id: uuid() };
-  form = { tags: new Set(), followUp: '', myNotes: '' };
+  form = { tags: new Set(), followUp: '', myNotes: '', tasks: [], newDue: todayStr(7) };
   $('dTitle').textContent = 'Add contact';
   $('dInfo').innerHTML = '';
   $('addFields').hidden = false;
@@ -737,7 +955,7 @@ function openAdd() {
   $('workPanel').hidden = true;
   $('scanStatus').textContent = 'Reads the text on your phone. Nothing is sent to other services.';
   $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanQrLink').hidden = true; markChecks([]); $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
-  $('myNotes').value = ''; $('followDate').value = '';
+  $('myNotes').value = ''; $('followDate').value = form.newDue; $('taskText').value = '';
   $('saveBtn').textContent = 'Add contact';
   renderChips();
   show('vDetail');
@@ -746,11 +964,13 @@ function openAdd() {
 
 function localFromAdd(d) {
   return { id: d.clientId, time: d.clientTimestamp, name: d.name, email: d.email, phone: d.phone, company: d.company,
-           note: '', cardId: '', myNotes: d.myNotes, tags: d.tags, followUp: d.followUp, updated: '', source: d.source, photos: [], title: d.title || '', website: d.website || '' };
+           note: '', cardId: '', myNotes: d.myNotes, tags: d.tags, followUp: d.followUp, updated: '', source: d.source, photos: [], title: d.title || '', website: d.website || '', tasks: d.tasks || [] };
 }
 
 $('saveBtn').addEventListener('click', async () => {
-  const data = { myNotes: $('myNotes').value.trim(), tags: Array.from(form.tags), followUp: form.followUp };
+  // a follow-up typed but not added yet is added on save
+  if ($('taskText').value.trim()) addTask($('taskText').value, form.newDue);
+  const data = { myNotes: $('myNotes').value.trim(), tags: Array.from(form.tags), tasks: form.tasks, followUp: nextDue(form.tasks) };
   let op;
   if (current.isNew) {
     const name = $('aName').value.trim();
@@ -1111,7 +1331,7 @@ $('exportBtn').addEventListener('click', async () => {
   const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
   const sets = allSets();
   const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Lead'].concat(sets.map(g => g.name))
-    .concat(['Other tags', 'Follow up', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by']);
+    .concat(['Other tags', 'Next follow-up', 'Open follow-ups', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by']);
   const lines = [head].concat(rows.map(c => {
     const d = new Date(c.time), tags = new Set(c.tags || []);
     const known = new Set(TEMPS);
@@ -1119,7 +1339,7 @@ $('exportBtn').addEventListener('click', async () => {
     return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.title), clean(c.email), clean(c.phone), clean(c.website),
       eventsOf(c).map(e => e.name).join(', '), [...tags].filter(t => TEMPS.includes(t)).join(', ')].concat(answers)
       .concat([[...tags].filter(t => !known.has(t)).map(tagLabel).join(', '),
-      c.followUp || '', clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me']);
+      c.followUp || '', tasksOf(c).filter(t => !t.done).map(t => (t.due ? t.due + ' ' : '') + t.text).join(' | '), clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me']);
   })).map(r => r.map(cell).join(';'));
   // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
   const csv = '\ufeff' + lines.join('\r\n');
@@ -1207,7 +1427,7 @@ function renderPickList() {
     const row = document.createElement('div'); row.className = 'pickrow';
     const evNames = (g.events || []).map(id => (events.find(e => e.id === id) || {}).name).filter(Boolean);
     row.innerHTML = `<div class="info"><b>${esc(g.name)} ${g.team ? '<span class="badge team">team</span>' : ''}</b>
-      <span class="opts">${esc(g.options.join(' · '))}${g.multi ? '' : ' · one answer'}${evNames.length ? ' · only at ' + esc(evNames.join(', ')) : ''}</span></div>`;
+      <span class="opts">${esc(g.options.join(' · '))}${g.multi ? '' : ' · one answer'}${g.task ? ' · adds follow-ups' : ''}${evNames.length ? ' · only at ' + esc(evNames.join(', ')) : ''}</span></div>`;
     if (!g.team || isAdmin) {
       const ed = document.createElement('button'); ed.type = 'button'; ed.className = 'iconbtn'; ed.textContent = 'Edit';
       ed.addEventListener('click', () => editPick(g));
@@ -1232,6 +1452,7 @@ function editPick(g) {
   $('pickName').value = g ? g.name : '';
   $('pickOptions').value = g ? g.options.join('\n') : '';
   $('pickMulti').checked = g ? g.multi !== false : true;
+  $('pickTask').checked = !!(g && g.task);
   $('pickTeam').checked = !!(g && g.team);
   $('pickTeamRow').hidden = !(me && me.role === 'admin');
   pickEventSel = new Set(g ? g.events || [] : []);
@@ -1242,7 +1463,7 @@ function editPick(g) {
 async function savePickList(scope, change, msg) {
   const base = scope === 'team' ? (picks.team || []) : mySets();
   try {
-    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [] }))) });
+    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [], task: !!x.task }))) });
     ls.set('ownerPicks', picks); renderPickList(); toast(msg); return true;
   } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); return false; }
 }
@@ -1251,7 +1472,7 @@ $('pickForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = $('pickSave'); btn.disabled = true;
   const set = { id: editingPick ? editingPick.id : '', name: $('pickName').value.trim(), options: $('pickOptions').value.split(/\n+/).map(x => x.trim()).filter(Boolean),
-    multi: $('pickMulti').checked, events: [...pickEventSel] };
+    multi: $('pickMulti').checked, events: [...pickEventSel], task: $('pickTask').checked };
   const scope = me && me.role === 'admin' && $('pickTeam').checked ? 'team' : 'mine';
   const moved = editingPick && editingPick.scope !== scope;
   let ok = await savePickList(scope, list => editingPick && !moved ? list.map(x => (x.id === set.id ? set : x)) : list.concat(set), editingPick ? 'Saved' : 'Quick picks added');
