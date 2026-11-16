@@ -36,6 +36,17 @@
     }).join(' ');
   }
 
+  function lev(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  }
+  const plain = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  // the reader mixes up 1, l, i, I, t and j; compare words with those made equal
+  const loose = s => plain(s).replace(/[1li|!tj]/g, 'l').replace(/[0o]/g, 'o');
+
   function splitRank(s) {
     const m = s.match(RANK);
     return m ? { rank: m[0].trim(), rest: s.slice(m[0].length).trim() } : { rank: '', rest: s };
@@ -77,7 +88,11 @@
     else if (/^MECARD:/i.test(qr)) Object.assign(out, fromMecard(qr), { source: 'qr' });
     if (out.source === 'qr' && out.name) return out;
 
-    const lines = (input.lines || []).map(l => ({ text: tidy(l.text), h: l.h || 0 }))
+    // a QR code with a web address tells us the exact domain (optics11.com, not opticsil.com)
+    let qrHost = '';
+    const qm = /^https?:\/\/(?:www\.)?([^/\s?#]+)/i.exec(qr);
+    if (qm) qrHost = qm[1].toLowerCase();
+    const lines = (input.lines || []).map(l => ({ text: tidy(l.text).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0 }))
       .filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
     const used = new Set();
     const all = lines.map(l => l.text).join('\n');
@@ -139,8 +154,9 @@
     }
     if (rank) out.title = [rank.charAt(0).toUpperCase() + rank.slice(1), out.title].filter(Boolean).join(', ');
 
+    repair(out, qrHost);
     if (!out.company) {
-      const ok = l => !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim());
+      const ok = l => letters(l.text) >= 3 && !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim());
       const legal = free().find(l => ok(l) && LEGAL.test(l.text));
       const org = free().filter(l => ok(l) && orgLevel(l.text) < ORG.length).sort((x, y) => orgLevel(x.text) - orgLevel(y.text) || x.i - y.i)[0];
       const c = legal || org;
@@ -170,6 +186,34 @@
     }
     out.source = out.source || 'text';
     return out;
+  }
+
+  // Fix typical misreads in email and web address using what else is on the card.
+  function repair(out, qrHost) {
+    const site = out.website.replace(/^(https?:\/\/)?(www\.)?/i, '').split('/')[0].toLowerCase();
+    let [local, host] = out.email ? out.email.split('@') : ['', ''];
+    // 1. the domain: trust the QR code, then the website, when they are nearly the same
+    const trusted = qrHost || '';
+    const fixHost = h => (trusted && h && h !== trusted && (loose(h) === loose(trusted) || lev(h, trusted) <= 2) ? trusted : h);
+    host = fixHost(host);
+    let site2 = fixHost(site);
+    if (host && site2 && host !== site2 && loose(host) === loose(site2)) {
+      // email and website disagree only in look-alike letters: prefer the one with digits where the other has i/l
+      const pick = /\d/.test(host) ? host : site2;
+      host = pick; site2 = pick;
+    }
+    if (site2 && site2 !== site) out.website = out.website.replace(site, site2);
+    if (!out.website && qrHost && !/\.vcf$/i.test(qrHost)) out.website = qrHost;
+    // 2. the part before @: firstname.lastname, so compare with the name on the card
+    if (local && out.name) {
+      const words = plain(out.name).split(/\s+/).filter(w => w.length > 1);
+      local = local.split(/([._-])/).map(part => {
+        if (/^[._-]$/.test(part)) return part;
+        const w = words.find(x => x !== part && x.length >= 4 && Math.abs(x.length - part.length) <= 1 && x[0] === part[0] && x.slice(-1) === part.slice(-1) && (loose(x) === loose(part) || lev(x, part) === 1));
+        return w || part;
+      }).join('');
+    }
+    if (out.email) out.email = local + '@' + host;
   }
 
   root.CardParse = { parse, looksLikeName, nameCase };

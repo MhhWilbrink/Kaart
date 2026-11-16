@@ -149,6 +149,7 @@
         <span>Scan business card or badge</span>
         <input type="file" id="scanInput" accept="image/*" hidden>
       </label>
+      <a id="scanQrLink" hidden target="_blank" rel="noopener" class="small" style="display:block;margin:0 0 6px">The QR code links to a contact file: open it to add it to your phone's contacts</a>
       <p class="muted small" id="scanStatus" style="margin:0 0 4px">Reads the text on your phone. Nothing is sent to other services.</p>
       <details id="scanTextBox" hidden style="margin:4px 0 6px"><summary class="small" style="cursor:pointer;color:var(--primary)">Text found on the card</summary>
         <div class="chips" id="scanLines" style="margin-top:6px"></div>
@@ -320,7 +321,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.8.1';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -639,7 +640,7 @@ function openAdd() {
   ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
   $('workPanel').hidden = true;
   $('scanStatus').textContent = 'Reads the text on your phone. Nothing is sent to other services.';
-  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
+  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanQrLink').hidden = true; $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
   $('myNotes').value = ''; $('followDate').value = '';
   $('saveBtn').textContent = 'Add contact';
   renderChips();
@@ -877,7 +878,9 @@ $('scanInput').addEventListener('change', async e => {
     $('aSource').value = 'badge';
     const texts = r.source === 'qr'
       ? qr.split(/\r?\n|;(?=[A-Z]+:)/).filter(l => l && !/^(BEGIN|END|VERSION|MECARD|N|PRODID|REV|UID)[:;]/i.test(l)).map(l => l.replace(/^[A-Z-]+(;[^:]*)?:/i, '').replace(/;+/g, ' ').trim()).filter(l => l && !/^(TEL|ADR|EMAIL|URL|ORG|TITLE|FN|NOTE|CELL|WORK|HOME|VOICE|FAX|PREF|INTERNET|TYPE|[ ,=])+$/i.test(l))
-      : lines.map(l => l.text.trim()).filter(Boolean);
+      : lines.map(l => l.text.trim()).filter(Boolean).concat(/^https?:\/\//i.test(qr) ? [qr] : []);
+    $('scanQrLink').hidden = !/^https:\/\/\S+\.vcf(\?|$)/i.test(qr);
+    if (!$('scanQrLink').hidden) $('scanQrLink').href = qr;
     renderScanLines(texts);
     $('scanTextBox').hidden = !texts.length; $('scanTextBox').open = true;
     const secs = Math.round((Date.now() - t0) / 1000);

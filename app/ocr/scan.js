@@ -36,8 +36,24 @@
     const small = toCanvas(src, 360), w = small.width, h = small.height;
     const g = gray(small.getContext('2d'), w, h);
     const t = otsu(g);
+    let hit = brightArea(g, w, h, t);
+    // light-grey table or wall: the bright area is nearly the whole photo. The card is the brightest part,
+    // so split the bright pixels once more.
+    if (!hit || hit.area > 0.85 * w * h) {
+      const upper = g.filter(v => v > t);
+      const hit2 = upper.length ? brightArea(g, w, h, otsu(upper)) : null;
+      if (hit2 && hit2.area > 0.12 * w * h) hit = hit2;
+    }
+    if (!hit || hit.area < 0.12 * w * h || hit.area > 0.97 * w * h) return null;   // no clear card: use the whole photo
+    const f = (src.naturalWidth || src.width) / w, pad = 0.012 * Math.max(w, h);
+    const x = Math.max(0, hit.x0 - pad), y = Math.max(0, hit.y0 - pad);
+    return { x: x * f, y: y * f, w: (Math.min(w, hit.x1 + pad) - x) * f, h: (Math.min(h, hit.y1 + pad) - y) * f };
+  }
+
+  // The largest bright area at threshold t, with background edges trimmed off.
+  function brightArea(g, w, h, t) {
     const bright = new Uint8Array(w * h); g.forEach((v, i) => bright[i] = v > t ? 1 : 0);
-    // close small gaps (text, logos) so the card is one area: dilate twice
+    // close small gaps (text, logos) so the card is one area
     let m = bright;
     for (let k = 0; k < 3; k++) {
       const n = new Uint8Array(w * h);
@@ -60,18 +76,15 @@
     }
     if (!best) return null;
     // trim edges that are mostly background (bright patches of a table or wall can stick to the card)
-    const frac = (x0, y0, x1, y1) => { let n = 0, t = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { t++; n += bright[y * w + x]; } return n / Math.max(1, t); };
+    const frac = (x0, y0, x1, y1) => { let n = 0, tt = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { tt++; n += bright[y * w + x]; } return n / Math.max(1, tt); };
     for (let k = 0; k < 4; k++) {
       while (best.y1 - best.y0 > 20 && frac(best.x0, best.y0, best.x1, best.y0) < 0.6) best.y0++;
       while (best.y1 - best.y0 > 20 && frac(best.x0, best.y1, best.x1, best.y1) < 0.6) best.y1--;
       while (best.x1 - best.x0 > 20 && frac(best.x0, best.y0, best.x0, best.y1) < 0.6) best.x0++;
       while (best.x1 - best.x0 > 20 && frac(best.x1, best.y0, best.x1, best.y1) < 0.6) best.x1--;
     }
-    const area = (best.x1 - best.x0) * (best.y1 - best.y0);
-    if (area < 0.12 * w * h || area > 0.97 * w * h) return null;       // no clear card: use the whole photo
-    const f = (src.naturalWidth || src.width) / w, pad = 0.015 * Math.max(w, h);
-    const x = Math.max(0, best.x0 - pad), y = Math.max(0, best.y0 - pad);
-    return { x: x * f, y: y * f, w: (Math.min(w, best.x1 + pad) - x) * f, h: (Math.min(h, best.y1 + pad) - y) * f };
+    best.area = (best.x1 - best.x0) * (best.y1 - best.y0);
+    return best;
   }
 
   // Crop, rotate (0/90/180/270) and stretch the contrast, so dim photos become black text on white.
@@ -135,7 +148,8 @@
     return (lines || []).map(l => ({ text: l.text.replace(/\s+/g, ' ').trim(), conf: l.confidence ?? 0,
       x0: l.bbox.x0 + dx, y0: l.bbox.y0 + dy, x1: l.bbox.x1 + dx, y1: l.bbox.y1 + dy }));
   }
-  const goodLine = l => l.conf >= 60 && (l.text.match(/[\p{L}\d]/gu) || []).length >= 2 && /[\p{L}\d]{2}/u.test(l.text);
+  // emails and web addresses get a lower bar: odd letter mixes (optics11) make the reader less sure, but they matter most
+  const goodLine = l => (l.conf >= 60 || (l.conf >= 30 && /[@&]|www|\.(com|net|org|[a-z]{2})\b/i.test(l.text))) && (l.text.match(/[\p{L}\d]/gu) || []).length >= 2 && /[\p{L}\d]{2}/u.test(l.text);
 
   // Merge readings of the whole card and of its halves: where two lines cover the same spot, keep the surer one.
   function merge(lists) {
@@ -176,7 +190,7 @@
     const box = findCard(img);
     const w = box ? box.w : (img.naturalWidth || img.width), h = box ? box.h : (img.naturalHeight || img.height);
     // Cards are wider than tall: a tall crop means the photo was taken sideways.
-    const angles = h > w * 1.1 ? [90, 270] : [0, 180];
+    const angles = h > w * 1.1 ? [90, 270, 0, 180] : [0, 180, 90, 270];
     await worker.setParameters({ tessedit_pageseg_mode: String((read.opts && read.opts.psm) || 11) });   // sparse text: business cards are not paragraphs
     let best = null;
     for (const a of angles) {
@@ -185,7 +199,8 @@
       const { data } = await worker.recognize(c);
       const sc = score(data);
       if (!best || sc > best.score) best = { angle: a, score: sc, data };
-      if (sc > 60) break;                                          // clearly the right way up: skip the other side
+      if (sc > 60) break;                                          // clearly the right way up: skip the other sides
+      if (a === angles[1] && best.score > 25) break;               // good enough from the likely two
     }
     // read the winner again at full size
     const c = prepare(img, box, best.angle, (read.opts && read.opts.size) || 1600);
