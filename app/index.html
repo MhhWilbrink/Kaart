@@ -474,7 +474,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.16.6';
+const APP_VERSION = '2.16.7';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -1299,10 +1299,11 @@ async function shrink(file) {
     bmp = await new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('This photo could not be read. Try a JPEG or PNG.')); img.src = URL.createObjectURL(file); });
   }
   const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight;
-  const scale = Math.min(1, 1600 / Math.max(w, h));
+  // 1280 px and JPEG quality 0.75: sharp on a phone screen, about 150–300 KB (a phone photo is 3–5 MB)
+  const scale = Math.min(1, 1280 / Math.max(w, h));
   const cv = document.createElement('canvas'); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
-  let q = 0.82, url = cv.toDataURL('image/jpeg', q);
+  let q = 0.75, url = cv.toDataURL('image/jpeg', q);
   while (url.length > 3.5e6 && q > 0.4) { q -= 0.15; url = cv.toDataURL('image/jpeg', q); }
   return url;
 }
@@ -1431,7 +1432,8 @@ async function scanFile(file) {
   const t0 = Date.now();
   try {
     const photo = await shrink(file);                       // also kept as a photo of the contact
-    if (pendingPhotos.length < 6) { pendingPhotos.push(photo); renderPhotos(); }
+    let photoIdx = -1;
+    if (pendingPhotos.length < 6) { photoIdx = pendingPhotos.push(photo) - 1; renderPhotos(); }
     const img = await loadImage(file);
     const size = img.width + '×' + img.height + ' px' + (file.name === 'card.jpg' ? ', scan frame' : '');
     let qr = '';
@@ -1443,6 +1445,10 @@ async function scanFile(file) {
       const worker = await getOcr(status);
       await loadScript('ocr/scan.js');
       const res = await CardScan.read(worker, img, status);
+      // after reading: keep only the card itself, upright and small (the text was read from the full photo)
+      if (photoIdx >= 0 && pendingPhotos[photoIdx] === photo) {
+        try { pendingPhotos[photoIdx] = CardScan.photo(img, res.box, res.angle, 1200, 0.72); renderPhotos(); } catch (e) { /* keep the plain photo */ }
+      }
       lines = res.lines;
     }
     URL.revokeObjectURL(img.src);

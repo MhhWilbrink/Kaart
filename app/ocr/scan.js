@@ -97,6 +97,24 @@
   }
 
   // Crop, rotate (0/90/180/270) and stretch the contrast, so dim photos become black text on white.
+  // A small colour picture of just the card, the right way up: kept with the contact instead of the whole photo.
+  function photo(src, box, angle, maxSide, quality) {
+    const W = src.naturalWidth || src.width, H = src.naturalHeight || src.height;
+    let x = 0, y = 0, bw = W, bh = H;
+    if (box) {             // a little room around the card
+      const mx = box.w * 0.04, my = box.h * 0.04;
+      x = Math.max(0, box.x - mx); y = Math.max(0, box.y - my);
+      bw = Math.min(W - x, box.w + 2 * mx); bh = Math.min(H - y, box.h + 2 * my);
+    }
+    const s = Math.min(1, (maxSide || 1200) / Math.max(bw, bh)), rot = angle % 180 !== 0;
+    const c = document.createElement('canvas');
+    c.width = Math.round((rot ? bh : bw) * s); c.height = Math.round((rot ? bw : bh) * s);
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2); ctx.rotate(angle * Math.PI / 180);
+    ctx.drawImage(src, x, y, bw, bh, -bw * s / 2, -bh * s / 2, bw * s, bh * s);
+    return c.toDataURL('image/jpeg', quality || 0.72);
+  }
+
   function prepare(src, box, angle, maxSide, border, invert) {
     border = border == null ? 24 : border;
     const bw = box ? box.w : (src.naturalWidth || src.width), bh = box ? box.h : (src.naturalHeight || src.height);
@@ -286,7 +304,7 @@
       extra.push(rawLines(res.data, r.x - 16, r.y - 16));
     }
     await worker.setParameters({ tessedit_pageseg_mode: '11' });
-    return { lines: merge([found].concat(extra)), angle: best.angle, cropped: !!box, inverted: best.invert, canvas: c };
+    return { lines: merge([found].concat(extra)), angle: best.angle, cropped: !!box, box, inverted: best.invert, canvas: c };
   }
 
   // Areas with ink (text) that no found line covers. Logos (very tall areas) and specks are ignored.
@@ -338,5 +356,5 @@
     });
   }
 
-  root.CardScan = { read, findCard, prepare, uncovered, crop, rawLines, looksDark };
+  root.CardScan = { read, findCard, prepare, uncovered, crop, rawLines, looksDark, photo };
 })(typeof window !== 'undefined' ? window : globalThis);
