@@ -474,7 +474,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.16.5';
+const APP_VERSION = '2.16.6';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -543,10 +543,18 @@ function timeAgo(iso) {
 
 /* ---------- API ---------- */
 async function api(action, data = {}) {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action, token }, data))
-  });
+  // never wait forever: a request that hangs (weak signal at a venue) would hold up everything behind it
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), action === 'addPhoto' ? 90000 : 30000) : null;
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, token }, data)), signal: ctrl ? ctrl.signal : undefined
+    });
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? 'No answer from the server. Will try again.' : 'No connection. Will try again.');
+  } finally { if (timer) clearTimeout(timer); }
   const j = await res.json();
   if (!j.ok) {
     if (j.error === 'SESSION_EXPIRED') { signOutLocal(); throw new Error('Please sign in again.'); }
@@ -575,26 +583,44 @@ function enqueue(op) {
   q.push(op);
   ls.set('ownerQueue', q);
 }
-let flushing = false;
-async function flushQueue() {
-  if (flushing || !navigator.onLine || !token) return;
+// One sync round at a time. A change saved while a round is running is sent in a new round straight
+// after it (before, it waited for the next app switch or reopen: that could take minutes).
+let flushRun = null;
+function flushQueue() {
+  if (!navigator.onLine || !token) return Promise.resolve();
+  if (flushRun) return flushRun.then(() => flushQueue());
+  flushRun = flushRound().finally(() => { flushRun = null; });
+  return flushRun;
+}
+async function flushRound() {
   const q = queue();
-  if (!q.length) return renderBanner();
-  flushing = true;
-  const left = [];
+  if (!q.length) { renderBanner(); return flushPhotos(); }
+  const done = new Set(), added = new Map();          // ops sent (as stored text); new contacts: phone id -> server id
+  let failed = 0;
   for (const op of q) {
     try {
       const r = await api(op.action, op.data);
+      done.add(JSON.stringify(op));
+      if (op.action === 'add') added.set(op.data.clientId, r && r.id ? r.id : op.data.clientId);
       if (op.action === 'add' && r && r.id && r.id !== op.data.clientId) onMerged(op.data.clientId, r);   // same name: added to an existing contact
     }
-    catch (e) { if (!(op.action === 'deleteContact' && /not found/i.test(e.message))) left.push(op); }   // already gone = done
+    catch (e) {
+      if (op.action === 'deleteContact' && /not found/i.test(e.message)) done.add(JSON.stringify(op));   // already gone = done
+      else failed++;
+    }
   }
-  ls.set('ownerQueue', left);
-  flushing = false;
+  // Re-read the stored queue: changes saved while this round ran are in there and must stay.
+  // A new contact that was edited during the round was sent as it was: send the edit as an update.
+  const now = queue().filter(op => !done.has(JSON.stringify(op))).map(op =>
+    op.action === 'add' && added.has(op.data.clientId) ? { action: 'update', data: Object.assign({}, op.data, { id: added.get(op.data.clientId) }) } : op);
+  ls.set('ownerQueue', now);
   renderBanner();
   await flushPhotos();
-  if (!left.length) refresh(true);
+  if (!failed && !now.length) refresh(true);
+  else if (now.length && !failed) return flushRound();
 }
+// keep trying while something waits (a failed request is retried within 20 seconds)
+setInterval(() => { if (token && navigator.onLine && (queue().length || photoQueue.length)) flushQueue(); }, 20000);
 
 /* ---------- same person met twice ---------- */
 // Same rules as the server: case, accents, punctuation, ranks/titles and word order don't matter; one-word names never match.
@@ -692,9 +718,15 @@ function enqueuePhoto(contactId, url) {
   photoQueue.push({ qid: uuid(), contactId, url, added: Date.now() });
   savePhotoQueue(); renderBanner();
 }
+let photoRun = null;
 async function flushPhotos() {
   await photoQueueReady;
-  if (flushingPhotos || !navigator.onLine || !token || !photoQueue.length) return;
+  if (!navigator.onLine || !token || !photoQueue.length) return;
+  if (photoRun) return photoRun.then(() => flushPhotos());
+  photoRun = photoRound().finally(() => { photoRun = null; });
+  return photoRun;
+}
+async function photoRound() {
   flushingPhotos = true;
   let sent = 0;
   for (const p of photoQueue.slice()) {
