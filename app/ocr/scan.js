@@ -11,10 +11,19 @@
     return c;
   }
 
-  function gray(ctx, w, h) {
+  function gray(ctx, w, h, invert) {
     const d = ctx.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
-    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) { const v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; g[j] = invert ? 255 - v : v; }
     return g;
+  }
+
+  // Dark cards with light text (navy, black, purple): the middle of the photo is mostly dark.
+  function looksDark(src) {
+    const small = toCanvas(src, 200), w = small.width, h = small.height;
+    const g = gray(small.getContext('2d'), w, h);
+    let n = 0, dark = 0;
+    for (let y = Math.round(h * 0.2); y < h * 0.8; y++) for (let x = Math.round(w * 0.2); x < w * 0.8; x++) { n++; if (g[y * w + x] < 100) dark++; }
+    return dark / Math.max(1, n) > 0.35;
   }
 
   function otsu(g) {
@@ -32,9 +41,9 @@
   }
 
   // The card is the largest bright area. Returns a crop box in the coordinates of `src`, or null.
-  function findCard(src) {
+  function findCard(src, invert) {
     const small = toCanvas(src, 360), w = small.width, h = small.height;
-    const g = gray(small.getContext('2d'), w, h);
+    const g = gray(small.getContext('2d'), w, h, invert);
     const t = otsu(g);
     let hit = brightArea(g, w, h, t);
     // light-grey table or wall: the bright area is nearly the whole photo. The card is the brightest part,
@@ -88,7 +97,7 @@
   }
 
   // Crop, rotate (0/90/180/270) and stretch the contrast, so dim photos become black text on white.
-  function prepare(src, box, angle, maxSide, border) {
+  function prepare(src, box, angle, maxSide, border, invert) {
     border = border == null ? 24 : border;
     const bw = box ? box.w : (src.naturalWidth || src.width), bh = box ? box.h : (src.naturalHeight || src.height);
     const s = Math.min(2, maxSide / Math.max(bw, bh));
@@ -102,7 +111,10 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const im = ctx.getImageData(0, 0, c.width, c.height), d = im.data;
     const g = new Uint8Array(c.width * c.height);
-    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) { const v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; g[j] = invert ? 255 - v : v; }
+    if (invert) {   // the white border added above must stay white after turning dark into light
+      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (x < border || y < border || x >= c.width - border || y >= c.height - border) g[y * c.width + x] = 255;
+    }
     const hist = new Array(256).fill(0); g.forEach(v => hist[v]++);
     let lo = 0, hi = 255, acc = 0;
     for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > g.length * 0.01) { lo = i; break; } }
@@ -168,6 +180,18 @@
       .map(l => ({ text: l.text, h: l.y1 - l.y0, conf: l.conf }));
   }
 
+  // Where the text is (as fractions of the picture), from a first reading; null when it is most of the picture anyway.
+  function textRegion(data, cw, ch) {
+    if (!data || !cw) return null;
+    const ls = rawLines(data, 0, 0).filter(l => l.conf >= 80 && (l.text.match(/[\p{L}\d]/gu) || []).length >= 4);
+    if (ls.length < 2) return null;
+    let x0 = Math.min(...ls.map(l => l.x0)), y0 = Math.min(...ls.map(l => l.y0)), x1 = Math.max(...ls.map(l => l.x1)), y1 = Math.max(...ls.map(l => l.y1));
+    const mx = 0.08 * cw, my = 0.08 * ch;
+    x0 = Math.max(0, x0 - mx); y0 = Math.max(0, y0 - my); x1 = Math.min(cw, x1 + mx); y1 = Math.min(ch, y1 + my);
+    if ((x1 - x0) * (y1 - y0) > 0.7 * cw * ch) return null;
+    return { x: x0 / cw, y: y0 / ch, w: (x1 - x0) / cw, h: (y1 - y0) / ch };
+  }
+
   function crop(c, x, y, w, h) {
     const o = document.createElement('canvas'); o.width = w + 32; o.height = h + 32;
     const ctx = o.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, o.width, o.height);
@@ -185,27 +209,74 @@
     return s;
   }
 
-  async function read(worker, img, onStep) {
-    const step = onStep || (() => {});
-    const box = findCard(img);
+  // Find the card and the way up, for dark-on-light (normal) or light-on-dark (invert) text.
+  async function orient(worker, img, invert, step, noCrop) {
+    const box = noCrop || (read.opts && read.opts.nocrop) ? null : findCard(img, invert);
     const w = box ? box.w : (img.naturalWidth || img.width), h = box ? box.h : (img.naturalHeight || img.height);
     // Cards are wider than tall: a tall crop means the photo was taken sideways.
     const angles = h > w * 1.1 ? [90, 270, 0, 180] : [0, 180, 90, 270];
-    await worker.setParameters({ tessedit_pageseg_mode: String((read.opts && read.opts.psm) || 11) });   // sparse text: business cards are not paragraphs
     let best = null;
     for (const a of angles) {
       step('Reading the text…');
-      const c = prepare(img, box, a, 1200);
+      const c = prepare(img, box, a, box ? 1200 : 1000, null, invert);   // whole photos: a smaller first look is much faster
       const { data } = await worker.recognize(c);
       const sc = score(data);
-      if (!best || sc > best.score) best = { angle: a, score: sc, data };
+      if (!best || sc > best.score) best = { angle: a, score: sc, box, invert, data, cw: c.width, ch: c.height };
       if (sc > 60) break;                                          // clearly the right way up: skip the other sides
       if (a === angles[1] && best.score > 25) break;               // good enough from the likely two
     }
+    return best;
+  }
+
+  async function read(worker, img, onStep) {
+    const step = onStep || (() => {});
+    await worker.setParameters({ tessedit_pageseg_mode: String((read.opts && read.opts.psm) || 11) });   // sparse text: business cards are not paragraphs
+    // light text on a dark card: try that first; when the first try reads little, try the other way too
+    // Dark cards are hard to cut out of a dark table (glare splits them): read those from the whole photo.
+    const darkFirst = looksDark(img);
+    let best = await orient(worker, img, darkFirst, step, darkFirst);
+    if (best.score <= 60) {
+      const other = await orient(worker, img, !darkFirst, step, !darkFirst);
+      if (other.score > best.score) best = other;
+    }
+    // a weak result from the cut-out card: compare with the whole photo
+    if (best.box && best.score <= 60) {
+      step('Reading the text…');
+      const pc = prepare(img, null, best.angle, 1200, null, best.invert);
+      const { data } = await worker.recognize(pc);
+      const sc = score(data);
+      if (sc > best.score) best = Object.assign({}, best, { box: null, score: sc, data, cw: pc.width, ch: pc.height });
+    }
+    if (read.opts && read.opts.log) read.opts.log.push({ dark: darkFirst, invert: best.invert, crop: !!best.box, score: best.score });
+    const box = best.box;
     // read the winner again at full size
-    const c = prepare(img, box, best.angle, (read.opts && read.opts.size) || 1600);
+    // the reader works best with letters of about 30–50 pixels: very big print (a phone number across the card) is scaled down
+    let size = (read.opts && read.opts.size) || 1600;
+    const hs = best.data ? rawLines(best.data, 0, 0).filter(l => l.conf >= 70).map(l => l.y1 - l.y0).sort((a, b) => a - b) : [];
+    if (hs.length >= 3 && !(read.opts && read.opts.size)) {
+      const med = hs[Math.floor(hs.length / 2)] * 1600 / Math.max(best.cw, best.ch);    // at the 1600 size
+      if (med > 60) size = Math.max(1000, Math.round(1600 * 45 / med));
+    }
+    let c = prepare(img, box, best.angle, size, null, best.invert);
+    // only the part with text: less table or fabric to wade through, so faster and cleaner
+    const reg = textRegion(best.data, best.cw, best.ch);
+    if (read.opts && read.opts.log) read.opts.log.push({ reg, size });
+    if (reg) c = crop(c, Math.round(reg.x * c.width), Math.round(reg.y * c.height), Math.round(reg.w * c.width), Math.round(reg.h * c.height));
     const { data } = await worker.recognize(c);
     const found = rawLines(data, 0, 0).filter(goodLine);
+    // very big digits (a phone number across the card) are misread at full size: read those lines again smaller
+    const digits = t => (t.match(/\d/g) || []).length;
+    for (const l of found.filter(x => digits(x.text) >= 5 && x.y1 - x.y0 > 60).slice(0, 4)) {
+      const h = l.y1 - l.y0, f = 40 / h, pad = Math.round(h * 0.15);
+      const x = Math.max(0, l.x0 - pad), y = Math.max(0, l.y0 - pad), w = Math.min(c.width - x, l.x1 - l.x0 + 2 * pad), hh = Math.min(c.height - y, h + 2 * pad);
+      const sm = document.createElement('canvas'); sm.width = Math.round(w * f) + 32; sm.height = Math.round(hh * f) + 32;
+      const sctx = sm.getContext('2d'); sctx.fillStyle = '#fff'; sctx.fillRect(0, 0, sm.width, sm.height);
+      sctx.drawImage(c, x, y, w, hh, 16, 16, Math.round(w * f), Math.round(hh * f));
+      await worker.setParameters({ tessedit_pageseg_mode: '7' });
+      const res = await worker.recognize(sm);
+      const t = (res.data.text || '').replace(/\s+/g, ' ').trim();
+      if (t && digits(t) >= digits(l.text) - 1 && digits(t) <= digits(l.text) + 1) l.text = t;
+    }
     // small text next to a big logo is often skipped: read the inked areas that nothing was found in
     const extra = [];
     for (const r of uncovered(c, found).slice(0, 6)) {
@@ -215,7 +286,7 @@
       extra.push(rawLines(res.data, r.x - 16, r.y - 16));
     }
     await worker.setParameters({ tessedit_pageseg_mode: '11' });
-    return { lines: merge([found].concat(extra)), angle: best.angle, cropped: !!box, canvas: c };
+    return { lines: merge([found].concat(extra)), angle: best.angle, cropped: !!box, inverted: best.invert, canvas: c };
   }
 
   // Areas with ink (text) that no found line covers. Logos (very tall areas) and specks are ignored.
@@ -225,8 +296,8 @@
     sm.getContext('2d').drawImage(c, 0, 0, w, h);
     const g = gray(sm.getContext('2d'), w, h);
     const ink = new Uint8Array(w * h); g.forEach((v, i) => ink[i] = v < 110 ? 1 : 0);
-    // blank out what was already read
-    found.forEach(l => {
+    // blank out what was already read (a few loose characters such as "33" do not count: read that spot again)
+    found.filter(l => (l.text.match(/[\p{L}\d]/gu) || []).length >= 4).forEach(l => {
       for (let y = Math.max(0, Math.floor(l.y0 * f) - 2); y < Math.min(h, Math.ceil(l.y1 * f) + 2); y++)
         for (let x = Math.max(0, Math.floor(l.x0 * f) - 2); x < Math.min(w, Math.ceil(l.x1 * f) + 2); x++) ink[y * w + x] = 0;
     });
@@ -247,6 +318,9 @@
       if (bh < 5 || bw < 12 || n < 40) continue;            // specks
       if (bh > h * 0.22) continue;                          // logos and pictures
       if (x0 <= 1 || y0 <= 1 || x1 >= w - 2 || y1 >= h - 2) { if (bw > w * 0.5 || bh > h * 0.5) continue; }   // table edges
+      // text is a band of ink, wider than tall and not solid; table fabric and photos are not
+      const density = n / (bw * bh);
+      if (bw < bh * 1.5 || density > 0.85) continue;
       boxes.push({ x0, y0, x1, y1, n });
     }
     // neighbouring lines become one block
@@ -264,5 +338,5 @@
     });
   }
 
-  root.CardScan = { read, findCard, prepare, uncovered, crop, rawLines };
+  root.CardScan = { read, findCard, prepare, uncovered, crop, rawLines, looksDark };
 })(typeof window !== 'undefined' ? window : globalThis);

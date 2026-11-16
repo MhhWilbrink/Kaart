@@ -14,6 +14,8 @@
     /\b(ministry|ministarstvo|ministerie|ministerium|minist[eè]re|ministerstwo|departement|department|agency|agentschap|bundesamt|directorate|university|universiteit|universität|institute|instituut|institut|tno|fraunhofer|foundation|republi\S*|snage|forces)\b/i,
     /\b(group|groep|gruppe|holding|systems|technologies|technology|solutions|engineering|industries|defen[cs]e|robotics|maritime|shipyard|werft)\b/i
   ];
+  // a slogan ("Cloud robotics to power your mission") is not a company name
+  const SLOGAN = /\b(to|your|our|the|for|we|you|with|is|are|voor|naar|jouw|uw|onze|für|ihre|pour|votre)\b.*\s\S+\s|\s(to|your|our|for|voor|für|pour)\s/i;
   const GENERIC = /^(group|groep|gruppe|holding|company|ltd|gmbh|inc|systems|solutions|international)$/i;
   const TITLE = /\b(manager|director|directeur|directrice|direktor|engineer|ingenieur|ingénieur|officer|commander|captain|lieutenant|admiral|colonel|major|head|hoofd|leiter|leiterin|lead|leader|chief|ceo|cto|cfo|coo|cco|cio|cso|cmo|vp|vice|president|founder|owner|partner|consultant|advisor|adviser|adviseur|specialist|analyst|architect|developer|scientist|researcher|surveyor|hydrographer|sales|business development|account|project|program|programme|product|marketing|procurement|buyer|inkoper|technician|operator|coordinator|co[öo]rdinator|assistant|secretary|attach[eé]|professor|senior|junior|principal|voditelj|načelnik|nacelnik|zapovjednik|savjetnik|referent|responsable|chef|kierownik|dyrektor|sjef|rådgiver|leder|teamleider|afdelingshoofd|beleidsmedewerker|medewerker)\b/i;
   // ranks and honorifics in front of a name (moved to the job title)
@@ -68,7 +70,7 @@
     const m = s.replace(/[oO](?=\d)/g, '0').match(PHONE);
     if (!m) return '';
     const p = m[0].replace(/[^\d+()\s-]/g, ' ').replace(/\s+/g, ' ').trim();
-    return p.replace(/\D/g, '').length >= 8 ? p : '';
+    return p.replace(/\D/g, '').length >= 8 ? p.replace(/^\+\s+/, '+') : '';
   }
 
   function looksLikeName(s) {
@@ -113,14 +115,27 @@
     const qm = /^https?:\/\/(?:www\.)?([^/\s?#]+)/i.exec(qr);
     if (qm && SOCIAL.test(qm[1])) out.profile = qr.trim();
     else if (qm) qrHost = qm[1].toLowerCase();
-    const lines = (input.lines || []).map(l => ({ text: tidy(l.text).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0, conf: l.conf == null ? 100 : l.conf }))
+    // a "|" is a printed divider (or the edge of an icon), not part of the text: split there
+    const lines = (input.lines || []).flatMap(l => String(l.text || '').split(/\s*\|\s*/).map(part =>
+      ({ text: tidy(part).replace(/([\w.-])\s?[&®]\s?([\w-]+\.[\w.-]+)/, '$1@$2'), h: l.h || 0, conf: l.conf == null ? 100 : l.conf })))
       .filter(l => l.text && letters(l.text) + (l.text.match(/\d/g) || []).length >= 2);
+    // a phone number printed over two lines ("+ 49 173" / "4953634")
+    for (let i = 0; i < lines.length - 1; i++) {
+      const a = lines[i].text, b = lines[i + 1].text;
+      if (/^(\+|00)\s?[\d\s()]{2,14}$/.test(a) && (a.match(/\d/g) || []).length < 8 && /^[\d\s]{4,}$/.test(b)) {
+        lines[i] = Object.assign({}, lines[i], { text: (a + ' ' + b).replace(/^\+\s+/, '+'), conf: Math.min(lines[i].conf, lines[i + 1].conf) });
+        lines.splice(i + 1, 1);
+      }
+    }
     const used = new Set();
     const all = lines.map(l => l.text).join('\n');
 
     const em = all.match(EMAIL);
     if (em) {
-      out.email = em[0].replace(/[.,;]+$/, '').toLowerCase();
+      out.email = em[0].replace(/[.,;]+$/, '').replace(/^[._%+-]+/, '').toLowerCase();
+      // "e-mail: info dolphinusv@gmail.com": the reader lost the dot between two words
+      const lab = all.match(/\be-?mail\s*[:.]?\s*([a-z0-9_%+-]{2,})\s+([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
+      if (lab && lab[2].toLowerCase().replace(/^[._%+-]+/, '') === out.email) { out.email = (lab[1] + '.' + out.email).toLowerCase(); guess.email = true; }
       const li = lines.find(l => l.text.includes(em[0]));
       conf.email = li ? li.conf : 100;
       if (/[&®]/.test((input.lines || []).map(l => l.text).join(' '))) guess.email = true;
@@ -131,6 +146,8 @@
     lines.forEach((l, i) => {
       if (EMAIL.test(l.text)) { used.add(i); return; }
       if (/^\s*(fax|f)\b[.:]*/i.test(l.text)) { if (phoneFrom(l.text)) used.add(i); return; }
+      // VAT and company numbers (BE 0807246767, KvK 12345678) are not phone numbers
+      if (/\b(vat|btw|tva|ust|mwst|kvk|coc|iban|bic|siret|siren|reg\.? ?no)\b/i.test(l.text) || (/\b[A-Z]{2}\s?\d{8,12}\b/.test(l.text) && !/\+/.test(l.text))) { used.add(i); return; }
       const t = l.text.replace(SKIP, '');
       const p = phoneFrom(t);
       if (p && (p.replace(/\D/g, '').length / Math.max(1, t.replace(/\s/g, '').length)) > 0.5) {
@@ -168,6 +185,21 @@
         out.name = nameCase(cands[0].rest); rank = cands[0].rank; nameIdx = cands[0].i; used.add(nameIdx); conf.name = cands[0].conf;
         if (cands[1] && cands[1].h > cands[0].h * 0.85) guess.name = true;        // two lines look like a name: not sure which
       }
+      // a name in small letters ("ariyan ghotbi"): accept it when the email address is made from it (aghotbi@…)
+      if (!out.name && out.email) {
+        const local = plain(out.email.split('@')[0]).replace(/[^a-z]/g, '');
+        const hit = free().find(l => {
+          if (/\d|@|www|http/i.test(l.text) || TITLE.test(l.text) || LEGAL.test(l.text)) return false;
+          const ws = plain(l.text).split(/\s+/).map(w => w.replace(/[^a-z]/g, '')).filter(Boolean);
+          if (ws.length < 2 || ws.length > 4) return false;
+          const first = ws[0], last = ws[ws.length - 1];
+          return last.length >= 3 && local.includes(last) && (local.includes(first) || local.startsWith(first[0]));
+        });
+        if (hit) {
+          out.name = hit.text.split(/\s+/).map((w, k) => (k > 0 && PARTICLE.test(w) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+          nameIdx = hit.i; used.add(hit.i); conf.name = hit.conf;
+        }
+      }
     } else out.name = nameCase(out.name);
 
     if (!out.title) {
@@ -181,13 +213,21 @@
         }
       }
     }
+    // "BUSINESS DEVELOPER" -> "Business Developer" (short words such as CEO stay as they are)
+    if (out.title && out.title === out.title.toUpperCase() && /\p{L}{4}/u.test(out.title)) out.title = out.title.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\b(Of|And|For|The)\b/g, w => w.toLowerCase()).replace(/\b(Ceo|Cto|Cfo|Coo|Cco|Vp|Hr|It|R&d)\b/g, w => w.toUpperCase());
     if (rank) out.title = [rank.charAt(0).toUpperCase() + rank.slice(1), out.title].filter(Boolean).join(', ');
 
     repair(out, qrHost);
+    if (!out.website && out.email) {
+      const host = out.email.split('@')[1] || '', key = host.replace(/[^a-z0-9]/g, '');
+      const hit = !/^(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|me|proton|protonmail|gmx)\./i.test(host) && key.length >= 5 &&
+        free().find(l => l.text.toLowerCase().replace(/^\W*(www\.?)?/, '').replace(/[^a-z0-9]/g, '') === key);
+      if (hit) { out.website = host; conf.website = hit.conf; guess.website = true; used.add(hit.i); }
+    }
     if (qrEmail) { out.email = qrEmail; out.changed = out.changed.filter(k => k !== 'email'); conf.email = 100; guess.email = false; }
     if (qrPhone) { out.phone = qrPhone; conf.phone = 100; guess.phone = false; }
     if (!out.company) {
-      const ok = l => letters(l.text) >= 3 && !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim());
+      const ok = l => letters(l.text) >= 3 && !/@|www|http/i.test(l.text) && l.text.length <= 70 && !GENERIC.test(l.text.trim()) && !SLOGAN.test(l.text);
       const legal = free().find(l => ok(l) && LEGAL.test(l.text));
       const org = free().filter(l => ok(l) && orgLevel(l.text) < ORG.length).sort((x, y) => orgLevel(x.text) - orgLevel(y.text) || x.i - y.i)[0];
       const c = legal || org;
