@@ -1,0 +1,2399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Card contacts</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a3d62">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Contacts">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --primary:#0a3d62; --bg:#f3f4f6; --card:#fff; --text:#111827; --muted:#6b7280; --line:#e5e7eb;
+          --hot:#b91c1c; --hotbg:#fee2e2; --warm:#b45309; --warmbg:#fef3c7; --cold:#1d4ed8; --coldbg:#dbeafe; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text);
+         padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .wrap { max-width:560px; margin:0 auto; padding:0 14px 110px; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); display:flex; align-items:center; gap:8px; padding:14px 0 10px; }
+  header h1 { flex:1; margin:0; font-size:1.35rem; }
+  .iconbtn { background:var(--card); border:1px solid var(--line); border-radius:10px; min-width:40px; height:40px; padding:0 12px; font-size:.95rem; cursor:pointer; color:var(--text); }
+  .iconbtn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
+  .banner { border-radius:10px; padding:9px 12px; font-size:.85rem; margin-bottom:10px; }
+  .banner.offline { background:#fef3c7; color:#92400e; }
+  .banner.sync { background:#e0e7ff; color:#3730a3; }
+  .item { background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:8px; display:block; width:100%; text-align:left; border:0; cursor:pointer; font:inherit; color:inherit; }
+  .item .top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+  .item .name { font-weight:600; font-size:1.02rem; }
+  .item .time { color:var(--muted); font-size:.8rem; white-space:nowrap; }
+  .item .sub { color:var(--muted); font-size:.85rem; margin-top:2px; }
+  .item .new { width:8px; height:8px; border-radius:50%; background:var(--primary); display:inline-block; margin-right:6px; vertical-align:middle; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .badge { font-size:.75rem; padding:2px 8px; border-radius:999px; background:#f3f4f6; color:#374151; }
+  .badge.Hot { background:var(--hotbg); color:var(--hot); } .badge.Warm { background:var(--warmbg); color:var(--warm); } .badge.Cold { background:var(--coldbg); color:var(--cold); }
+  .badge.due { background:#111827; color:#fff; } .badge.pending { background:#e0e7ff; color:#3730a3; }
+  .panel { background:var(--card); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .panel h2 { font-size:1rem; margin:0 0 10px; }
+  .muted { color:var(--muted); } .small { font-size:.85rem; }
+  .theirnote { background:#f9fafb; border-left:3px solid var(--line); padding:8px 10px; font-size:.9rem; border-radius:0; margin-top:10px; }
+  .actions { display:flex; gap:8px; margin-top:12px; }
+  .actions a { flex:1; text-align:center; padding:10px; border-radius:10px; background:#eef2f7; color:var(--primary); text-decoration:none; font-weight:600; font-size:.9rem; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { border:1px solid var(--line); background:#fff; border-radius:999px; padding:9px 14px; font-size:.92rem; cursor:pointer; color:var(--text); font-family:inherit; }
+  .chip.on { background:var(--primary); border-color:var(--primary); color:#fff; }
+  .chip.on.Hot { background:var(--hot); border-color:var(--hot); } .chip.on.Warm { background:var(--warm); border-color:var(--warm); } .chip.on.Cold { background:var(--cold); border-color:var(--cold); }
+  label { display:block; font-size:.82rem; color:var(--muted); margin:10px 0 4px; }
+  input, textarea, select { width:100%; padding:11px; border:1px solid #d1d5db; border-radius:10px; font:inherit; font-size:1rem; background:#fff; color:var(--text); }
+  textarea { min-height:110px; resize:vertical; }
+  .savebar { position:fixed; left:0; right:0; bottom:0; background:rgba(243,244,246,.96); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); }
+  .savebar .inner { max-width:560px; margin:0 auto; display:flex; gap:8px; }
+  .btn { flex:1; padding:14px; border:0; border-radius:12px; background:var(--primary); color:#fff; font-size:1rem; font-weight:600; cursor:pointer; font-family:inherit; }
+  .btn.ghost { background:#fff; color:var(--text); border:1px solid var(--line); flex:0 0 auto; }
+  .btn:disabled { opacity:.6; }
+  .empty { text-align:center; color:var(--muted); padding:40px 10px; }
+  #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); background:#111827; color:#fff; padding:10px 16px; border-radius:10px; font-size:.9rem; opacity:0; transition:opacity .2s; pointer-events:none; z-index:20; max-width:90%; text-align:center; }
+  #toast.show { opacity:1; }
+  .login { max-width:380px; margin:12vh auto 0; }
+  .check { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:.9rem; }
+  .check input { width:auto; }
+  .err { color:#b91c1c; font-size:.9rem; min-height:1.2em; margin-top:8px; }
+  .item .company { font-size:.92rem; margin-top:1px; }
+  .item .company.guess { color:var(--muted); font-style:italic; }
+  .search { position:relative; margin-bottom:8px; }
+  .search input { padding-left:36px; }
+  .search svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted); }
+  .filters { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:6px; scrollbar-width:none; }
+  .filters::-webkit-scrollbar { display:none; }
+  .filters .chip { white-space:nowrap; padding:7px 12px; font-size:.85rem; flex:0 0 auto; }
+  .listbar { display:flex; align-items:center; justify-content:space-between; margin:4px 2px 8px; font-size:.85rem; color:var(--muted); }
+  .linkbtn { background:none; border:0; color:var(--primary); font:inherit; font-weight:600; cursor:pointer; padding:4px 0; }
+  .badge.event { background:#ecfdf5; color:#047857; }
+  .danger { color:#b91c1c !important; border-color:#fecaca !important; }
+  .evrow { display:flex; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+  .evrow:first-child { border-top:0; }
+  .rsec { background:var(--card); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .rsec h2 { font-size:1rem; margin:0 0 10px; }
+  .rgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .rnum { background:var(--bg, #f4f6f8); border-radius:10px; padding:10px; }
+  .rnum b { display:block; font-size:1.4rem; }
+  .rtab { width:100%; border-collapse:collapse; font-size:.9rem; }
+  .rtab td, .rtab th { text-align:left; padding:6px 4px; border-top:1px solid var(--line); vertical-align:top; }
+  .rtab th { font-weight:600; color:var(--muted); font-size:.8rem; border-top:0; }
+  .rc { border-top:1px solid var(--line); padding:10px 0; }
+  .rc:first-of-type { border-top:0; }
+  .rc .notes { white-space:pre-wrap; font-size:.9rem; margin-top:4px; }
+  .evrow .info { flex:1; min-width:0; }
+  .evrow .info b { display:block; font-weight:600; }
+  .evrow .count { color:var(--muted); font-size:.8rem; }
+  .row2 { display:flex; gap:8px; } .row2 > div { flex:1; min-width:0; }
+  .photos { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .photos:empty { display:none; }
+  .thumb { position:relative; aspect-ratio:1; border:0; padding:0; border-radius:10px; overflow:hidden; background:#e5e7eb; cursor:pointer; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb.waiting::after { content:'Not sent yet'; position:absolute; left:0; right:0; bottom:0; font-size:.68rem; font-weight:600; padding:3px 0; background:rgba(146,64,14,.85); color:#fff; }
+  .thumb.loading::after { content:''; position:absolute; inset:0; margin:auto; width:22px; height:22px; border-radius:50%; border:3px solid #cbd5e1; border-top-color:var(--primary); animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .addphoto { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; padding:12px; border:1.5px dashed #cbd5e1; border-radius:12px; color:var(--primary); font-weight:600; font-size:.95rem; cursor:pointer; }
+  .addphoto.off { opacity:.5; pointer-events:none; }
+  #camView { position:fixed; inset:0; z-index:50; background:#000; }
+  #camVideo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #camFrame { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); width:86vw; max-width:520px; aspect-ratio:85.6/54; border:3px solid #fff; border-radius:14px; box-shadow:0 0 0 200vmax rgba(0,0,0,.5); }
+  #camFrame.portrait { width:auto; height:60vh; max-height:620px; aspect-ratio:54/85.6; }
+  #camTop { position:absolute; left:0; right:0; top:max(16px, env(safe-area-inset-top)); text-align:center; }
+  #camHint { display:inline-block; background:rgba(0,0,0,.55); color:#fff; padding:8px 14px; border-radius:20px; font-size:.95rem; }
+  #camHint.warn { background:#b45309; }
+  #camBar { position:absolute; left:0; right:0; bottom:calc(52px + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-around; }
+  #camShot { width:72px; height:72px; border-radius:50%; border:5px solid #fff; background:rgba(255,255,255,.35); cursor:pointer; }
+  #camShot:active { background:#fff; }
+  .camside { background:none; border:0; color:#fff; font:inherit; font-size:1rem; width:96px; cursor:pointer; }
+  .camlink { position:absolute; left:0; right:0; bottom:calc(14px + env(safe-area-inset-bottom)); background:none; border:0; color:#cbd5e1; font:inherit; font-size:.85rem; text-decoration:underline; cursor:pointer; }
+  #viewer { position:fixed; inset:0; z-index:30; background:#000; display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  #viewer img { flex:1; min-height:0; object-fit:contain; width:100%; }
+  #viewer .bar { display:flex; gap:10px; padding:12px 14px; }
+  #viewer .bar .btn { background:#1f2937; }
+  #viewer .bar .btn.del { background:#7f1d1d; }
+  input.check, textarea.check { background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 6px, #fdefb2 6px, #fdefb2 12px); border-color:#e0a800; }
+  .checknote { display:flex; align-items:center; gap:6px; font-size:.8rem; color:#7a5b00; margin:2px 0 8px; }
+  .checknote i { width:22px; height:12px; border:1px solid #e0a800; border-radius:3px; background:repeating-linear-gradient(-45deg, #fff8db, #fff8db 3px, #fdefb2 3px, #fdefb2 6px); }
+  .check-row { display:flex; align-items:center; gap:8px; font-weight:400; margin-top:10px; }
+  .check-row input { width:auto; margin:0; }
+  .pickrow { display:flex; align-items:flex-start; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+  .pickrow:first-child { border-top:0; }
+  .pickrow .info { flex:1; min-width:0; }
+  .pickrow .info b { display:block; font-weight:600; }
+  .pickrow .opts { color:var(--muted); font-size:.8rem; }
+  .badge.team { background:#e0e7ff; color:#3730a3; }
+  .tabs { display:flex; gap:4px; background:#e5e7eb; border-radius:12px; padding:3px; margin:0 0 10px; }
+  .tabs button { flex:1; border:0; background:none; padding:9px 6px; border-radius:9px; font:inherit; font-weight:600; font-size:.92rem; color:#374151; cursor:pointer; }
+  .tabs button.on { background:#fff; color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .tabs .num { display:inline-block; min-width:20px; padding:1px 6px; margin-left:4px; border-radius:999px; background:#dc2626; color:#fff; font-size:.75rem; }
+  .tgroup { margin:14px 2px 6px; font-size:.78rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .tgroup.late { color:#b91c1c; }
+  .task { display:flex; gap:10px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:8px; }
+  .task input[type=checkbox] { width:22px; height:22px; margin:2px 0 0; flex:0 0 auto; accent-color:var(--primary); }
+  .task .tbody { flex:1; min-width:0; cursor:pointer; }
+  .task .ttext { font-weight:600; }
+  .task.done .ttext { text-decoration:line-through; color:var(--muted); font-weight:400; }
+  .task .twho { font-size:.88rem; margin-top:2px; }
+  .task .tmeta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; }
+  .task .tdue { font-size:.8rem; color:var(--muted); }
+  .task .tdue.late { color:#b91c1c; font-weight:600; }
+  .task .tacts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .task .tacts a, .task .tacts button { font-size:.8rem; padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--primary); text-decoration:none; font-weight:600; cursor:pointer; }
+  .badge.show { background:#ede9fe; color:#5b21b6; font-weight:600; }
+  .trow { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--line); }
+  .trow:first-child { border-top:0; }
+  .trow input[type=checkbox] { width:20px; height:20px; margin:0; accent-color:var(--primary); }
+  .trow .tt { flex:1; min-width:0; }
+  .trow.done .tt { text-decoration:line-through; color:var(--muted); }
+  .trow input[type=date] { width:auto; padding:4px 6px; font-size:.8rem; }
+  .trow .x { border:0; background:none; color:var(--muted); font-size:1.1rem; cursor:pointer; padding:0 4px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN -->
+  <section id="vLogin" class="login" hidden>
+    <h1 style="font-size:1.5rem">Card contacts</h1>
+    <p class="muted" id="loginIntro">Sign in with your email address and password.</p>
+    <form id="loginForm" class="panel">
+      <label for="loginId">Email</label>
+      <input type="email" id="loginId" autocomplete="username" autocapitalize="off" inputmode="email">
+      <div id="inviteRow" hidden>
+        <label for="inviteCode">Invitation code</label>
+        <input id="inviteCode" autocomplete="one-time-code" autocapitalize="characters">
+      </div>
+      <label for="pw" id="pwLabel">Password</label>
+      <input type="password" id="pw" autocomplete="current-password" required>
+      <div class="check"><input type="checkbox" id="remember" checked><label for="remember" style="margin:0;color:inherit">Keep me signed in on this device (90 days)</label></div>
+      <button class="btn" id="loginBtn" style="width:100%;margin-top:14px">Sign in</button>
+      <div class="err" id="loginErr"></div>
+      <button class="linkbtn" type="button" id="inviteToggle" style="margin-top:6px">First time? Use your invitation code</button>
+    </form>
+  </section>
+
+  <!-- LIST -->
+  <section id="vList" hidden>
+    <header>
+      <h1>Contacts</h1>
+      <button class="iconbtn" id="refreshBtn" aria-label="Refresh">Refresh</button>
+      <button class="iconbtn" id="settingsBtn" aria-label="Settings">Settings</button>
+    </header>
+    <div id="netBanner"></div>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabContacts" role="tab">Contacts</button>
+      <button type="button" id="tabTasks" role="tab">Follow-ups<span class="num" id="taskNum" hidden></span></button>
+    </div>
+    <div id="taskView" hidden>
+      <div class="filters" id="taskFilters"></div>
+      <div id="taskList"></div>
+    </div>
+    <div id="contactView">
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="q" placeholder="Search name or company" autocomplete="off" aria-label="Search name or company">
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="listbar"><span id="count"></span><span><button class="linkbtn" id="reportBtn" type="button" hidden>Report</button><button class="linkbtn" id="exportBtn" type="button" style="margin-left:14px">Export</button></span></div>
+    <div id="list"></div>
+    </div>
+  </section>
+
+  <!-- DETAIL / ADD -->
+  <section id="vDetail" hidden>
+    <header>
+      <button class="iconbtn" id="backBtn">Back</button>
+      <h1 id="dTitle" style="font-size:1.1rem"></h1>
+    </header>
+    <div id="dInfo"></div>
+    <div class="panel" id="dupPanel" hidden></div>
+
+
+    <div class="panel" id="addFields" hidden>
+      <label class="addphoto" id="scanBtn" style="margin:0 0 6px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h6M7 14h10"/></svg>
+        <span>Scan business card or badge</span>
+        <input type="file" id="scanInput" accept="image/*" hidden>
+      </label>
+      <a id="scanQrLink" hidden target="_blank" rel="noopener" class="small" style="display:block;margin:0 0 6px">The QR code links to a contact file: open it to add it to your phone's contacts</a>
+      <p class="muted small" id="scanStatus" style="margin:0 0 4px">Reads the text on your phone. Nothing is sent to other services.</p>
+      <details id="scanTextBox" hidden style="margin:4px 0 6px"><summary class="small" style="cursor:pointer;color:var(--primary)">Text found on the card</summary>
+        <div class="chips" id="scanLines" style="margin-top:6px"></div>
+        <div id="lineTargets" hidden style="margin-top:8px;padding:8px;background:#f3f4f6;border-radius:10px"><div class="small muted" style="margin-bottom:6px">Put this line in:</div><div class="chips" id="lineTargetsBtns"></div></div>
+      </details>
+      <h2 style="margin-top:12px">Contact</h2>
+      <div class="checknote" id="checkNote" hidden><i></i><span>Shaded fields: the scanner was not sure. Please check them.</span></div>
+      <label for="aName">Name *</label>
+      <input id="aName" autocomplete="off">
+      <label for="aPhone">Phone</label>
+      <input id="aPhone" type="tel" autocomplete="off">
+      <label for="aEmail">Email</label>
+      <input id="aEmail" type="email" autocomplete="off">
+      <label for="aCompany">Organisation</label>
+      <input id="aCompany" autocomplete="off">
+      <label for="aTitle">Job title</label>
+      <input id="aTitle" autocomplete="off">
+      <label for="aWebsite">Website</label>
+      <input id="aWebsite" type="url" inputmode="url" autocapitalize="off" autocomplete="off" placeholder="www.example.com">
+      <label for="aSource">How did you get in touch?</label>
+      <select id="aSource">
+        <option value="in person">Met in person</option>
+        <option value="whatsapp">WhatsApp message</option>
+        <option value="email">Email</option>
+        <option value="badge">Badge / business card</option>
+      </select>
+    </div>
+
+    <div class="panel" id="workPanel" hidden>
+      <h2>Job title &amp; website</h2>
+      <label for="eTitle">Job title</label>
+      <input id="eTitle" autocomplete="off">
+      <label for="eWebsite">Website</label>
+      <input id="eWebsite" type="url" inputmode="url" autocapitalize="off" autocomplete="off" placeholder="www.example.com">
+    </div>
+    <div class="panel" id="photoPanel">
+      <h2>Photos</h2>
+      <div class="photos" id="photoGrid"></div>
+      <label class="addphoto" id="addPhotoBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        <span>Add photo</span>
+        <input type="file" id="photoInput" accept="image/*" hidden>
+      </label>
+      <p class="muted small" id="photoHint" style="margin:6px 0 0">Badge, business card, or a photo of the person or their product.</p>
+    </div>
+    <div class="panel">
+      <h2>Lead</h2>
+      <div class="chips" id="tempChips"></div>
+    </div>
+    <div id="pickPanels"></div>
+    <div class="panel">
+      <h2>Follow-ups</h2>
+      <div id="taskRows"></div>
+      <label for="taskText" style="margin-top:10px">New follow-up</label>
+      <input id="taskText" placeholder="e.g. Send quote, call back" maxlength="120" autocomplete="off">
+      <div class="chips" id="followChips" style="margin-top:8px"></div>
+      <input type="date" id="followDate" style="margin-top:8px">
+      <button class="btn ghost" type="button" id="taskAdd" style="margin-top:8px;width:100%">Add follow-up</button>
+      <div id="calRow" hidden>
+        <p class="muted small" style="margin:10px 0 6px">Put the next follow-up in your calendar (9:00 on that day):</p>
+        <div class="chips">
+          <button type="button" class="chip" id="calIcs">iPhone / Outlook app</button>
+          <button type="button" class="chip" id="calOutlook">Outlook 365</button>
+          <button type="button" class="chip" id="calGoogle">Google Calendar</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>My notes</h2>
+      <textarea id="myNotes" placeholder="What did you talk about?"></textarea>
+      <p class="muted small" style="margin:6px 0 0">Tip: tap the microphone on your keyboard to dictate.</p>
+    </div>
+    <div class="panel" id="handPanel" hidden>
+      <h2>Hand over to a colleague</h2>
+      <p class="small muted" style="margin:0 0 8px">Notes, follow-ups, tags and photos go along. Your colleague gets a notification.</p>
+      <select id="handTo" aria-label="Colleague"></select>
+      <input id="handMsg" placeholder="Message (optional), e.g. your region" maxlength="300" autocomplete="off" style="margin-top:8px">
+      <button class="btn ghost" id="handBtn" type="button" style="width:100%;margin-top:10px">Hand over</button>
+    </div>
+    <div class="panel" id="deletePanel">
+      <button class="btn ghost danger" id="deleteBtn" type="button" style="width:100%">Delete contact</button>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="vSettings" hidden>
+    <header>
+      <button class="iconbtn" id="backBtn2">Back</button>
+      <h1 style="font-size:1.1rem">Settings</h1>
+    </header>
+    <div class="panel" id="statsPanel">
+      <h2>Your card</h2>
+      <p class="small muted" style="margin:0 0 6px">How often your card page was opened (once per visitor per day) and how many people then shared their details.</p>
+      <div id="statsBody"></div>
+    </div>
+    <div class="panel">
+      <h2>Events</h2>
+      <p class="small muted" style="margin:0 0 6px">Contacts from these dates are grouped under the event automatically.</p>
+      <div id="evList"></div>
+      <form id="evForm" style="margin-top:6px">
+        <label for="evName" id="evFormTitle">New event</label>
+        <input id="evName" placeholder="e.g. UDT 2026" maxlength="60" autocomplete="off">
+        <div class="row2">
+          <div><label for="evStart">First day</label><input type="date" id="evStart"></div>
+          <div><label for="evEnd">Last day</label><input type="date" id="evEnd"></div>
+        </div>
+        <div id="evLeadRow" hidden>
+          <label for="evLead">Event lead</label>
+          <select id="evLead"></select>
+          <p class="small muted" style="margin:4px 0 0">The lead and administrators edit this event and see the team report.</p>
+          <label>Team at this event</label>
+          <div class="chips" id="evTeam"></div>
+        </div>
+        <label for="evTypes">Organisation types</label>
+        <input id="evTypes" placeholder="e.g. B2G, B2B, Suppliers" maxlength="300" autocomplete="off">
+        <p class="small muted" style="margin:4px 0 0">Contacts at this event can get one of these types. Separate with commas.</p>
+        <div class="actions">
+          <button class="btn" id="evSave" type="submit">Save event</button>
+          <button class="btn ghost" id="evCancel" type="button" hidden>Cancel</button>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Quick picks</h2>
+      <p class="small muted" style="margin:0 0 6px">Your own one-tap answers on every contact, for example <i>Interest: product A / product B</i> or <i>Next step: call / meeting / quote</i>. They are included in the export.</p>
+      <div id="pickList"></div>
+      <form id="pickForm" style="margin-top:8px">
+        <label for="pickName" id="pickFormTitle">New set</label>
+        <input id="pickName" maxlength="30" placeholder="e.g. Interest" autocomplete="off">
+        <label for="pickOptions">Options, one per line</label>
+        <textarea id="pickOptions" rows="4" placeholder="Product A&#10;Product B&#10;Service"></textarea>
+        <label class="check-row"><input type="checkbox" id="pickMulti" checked> More than one answer allowed</label>
+        <label class="check-row"><input type="checkbox" id="pickTask"> Tapping an answer adds a follow-up (in 1 week)</label>
+        <div id="pickEventsRow">
+          <label>Only show at these events <span class="muted">(none = always)</span></label>
+          <div class="chips" id="pickEvents"></div>
+        </div>
+        <label class="check-row" id="pickTeamRow" hidden><input type="checkbox" id="pickTeam"> For the whole team (only administrators can change it)</label>
+        <div class="actions">
+          <button class="btn" id="pickSave" type="submit">Save set</button>
+          <button class="btn ghost" id="pickCancel" type="button" hidden>Cancel</button>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Card scanner</h2>
+      <label class="small" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;font-weight:400"><input type="checkbox" id="camFrameOn" style="width:auto"> Use the scan frame (live camera with a card-shaped frame)</label>
+      <p class="small muted" style="margin:0 0 6px"><b>Languages.</b> English is always on. Add the languages of the cards you scan for better accents (é, ü, ø, ć). Each language makes reading a little slower and is downloaded once (1–3 MB).</p>
+      <div class="chips" id="ocrLangChips"></div>
+      <h2 style="margin-top:16px">How well it reads</h2>
+      <p class="small muted" style="margin:0 0 6px">Counted on this phone from the fields you correct before saving a scanned card. No names or details are kept, only counts.</p>
+      <div id="accBody"></div>
+      <div class="actions" style="margin-top:8px"><button class="btn ghost" id="accCopy" type="button">Copy summary</button><button class="btn ghost" id="accReset" type="button">Reset</button></div>
+    </div>
+    <div class="panel">
+      <h2>Follow-up email</h2>
+      <p class="small muted" style="margin:0 0 6px">Used by the <b>Follow-up email</b> button on a contact. Placeholders:
+        {firstName} {name} {company} {event} {atEvent} {myName} {myFirstName} {myTitle} {myCompany} {myPhone} {myEmail} {myCard}</p>
+      <label for="fuSubject">Subject</label>
+      <input id="fuSubject" maxlength="150">
+      <label for="fuBody">Message</label>
+      <textarea id="fuBody" rows="10" maxlength="3000"></textarea>
+      <div class="actions">
+        <button class="btn" type="button" id="fuSave">Save</button>
+        <button class="btn ghost" type="button" id="fuReset">Default text</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Notifications</h2>
+      <p class="small" id="pushStatus"></p>
+      <div class="actions" style="margin-top:6px">
+        <button class="btn" id="pushOn">Turn on notifications</button>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="pushTest" style="flex:1">Send test</button>
+        <button class="btn ghost" id="pushOff" style="flex:1">Turn off</button>
+      </div>
+    </div>
+    <div class="panel" id="installPanel">
+      <h2>Install on your home screen</h2>
+      <p class="small muted" id="installText"></p>
+    </div>
+    <div class="panel">
+      <h2>Account</h2>
+      <p class="small muted" id="appVersion" style="margin:0 0 8px"></p>
+      <a class="btn ghost" id="adminLink" href="../admin/" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Open the admin page</a>
+      <p class="small muted" style="margin:0 0 10px">Your card details, photo and branding; for administrators also the team. Sign in with the same email and password.</p>
+      <button class="btn ghost" id="signOut" style="width:100%">Sign out on this device</button>
+    </div>
+  </section>
+
+  <section id="vReport" hidden>
+    <header>
+      <button class="iconbtn" id="backBtn3">Back</button>
+      <h1 id="rTitle" style="font-size:1.1rem">Report</h1>
+    </header>
+    <div class="panel">
+      <div id="rScopeRow"><label>Contacts</label><div class="chips" id="rScope"></div></div>
+      <label>Report</label><div class="chips" id="rVariant"></div>
+      <div id="rTypeRow"><label>Organisation type</label><div class="chips" id="rType"></div></div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn" id="rPdf" type="button">Share PDF</button>
+        <button class="btn ghost" id="rMail" type="button">Email</button>
+      </div>
+    </div>
+    <div id="rBody"></div>
+  </section>
+</div>
+
+<div id="camView" hidden>
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="camFrame"></div>
+  <div id="camTop"><span id="camHint">Fit the card inside the frame</span></div>
+  <div id="camBar">
+    <button type="button" class="camside" id="camCancel">Cancel</button>
+    <button type="button" id="camShot" aria-label="Take photo"></button>
+    <button type="button" class="camside" id="camTurn">Turn frame</button>
+  </div>
+  <button type="button" class="camlink" id="camFile">Use the camera app or a photo instead</button>
+</div>
+
+<div class="savebar" id="saveBar" hidden>
+  <div class="inner">
+    <button class="btn" id="saveBtn">Save</button>
+  </div>
+</div>
+<div class="savebar" id="addBar" hidden>
+  <div class="inner">
+    <button class="btn" id="addBtn">+ Add contact manually</button>
+  </div>
+</div>
+<div id="viewer" hidden>
+  <img id="viewerImg" alt="Contact photo">
+  <div class="bar">
+    <button class="btn" id="viewerClose" type="button">Close</button>
+    <button class="btn del" id="viewerDelete" type="button">Delete photo</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// Settings come from ../config.json (same file as the card page). No code changes needed per customer.
+let ENDPOINT = null;
+async function loadConfig() {
+  try {
+    const c = await (await fetch('../config.json', { cache: 'no-cache' })).json();
+    ENDPOINT = new URL(c.endpoint, new URL('../', location.href)).href;   // also works with a relative endpoint like /api
+    ls.set('ownerEndpoint', ENDPOINT);
+  } catch (e) {
+    ENDPOINT = ls.get('ownerEndpoint', null);                              // offline: use the last known value
+  }
+}
+
+const APP_VERSION = '2.17.0';
+const TEMPS = ['Hot', 'Warm', 'Cold'];
+const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
+const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
+const srcLabel = s => SOURCES[s] || s;
+const FOLLOW = [['Tomorrow', 1], ['In 1 week', 7], ['In 2 weeks', 14], ['In 1 month', 30]];
+
+const $ = id => document.getElementById(id);
+const ls = {
+  get(k, f) { try { const v = localStorage.getItem(k); return v === null ? f : JSON.parse(v); } catch (e) { return f; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+
+/* ---------- tiny IndexedDB key/value store (shared with the service worker) ---------- */
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('owner-app', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('kv', mode);
+      const req = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+const idbSet = (k, v) => idb('readwrite', s => s.put(v, k)).catch(() => {});
+const idbGet = k => idb('readonly', s => s.get(k)).catch(() => null);
+
+/* ---------- state ---------- */
+let token = ls.get('ownerToken', null);
+let contacts = ls.get('ownerRecent', []);
+let seenUpTo = ls.get('ownerSeen', '');
+let events = ls.get('ownerEvents', []);
+let listMode = 'contacts';                  // 'contacts' or 'tasks' (the Follow-ups tab)
+let taskFilter = '';                        // event id shown in the Follow-ups tab ('' = all)
+let me = ls.get('ownerMe', null);
+let people = ls.get('ownerPeople', []);      // everyone in the team (for event leads and teams)
+let picks = ls.get('ownerPicks', { team: [], mine: null });   // quick-pick sets: team (by administrators) and your own           // your own card details and follow-up template
+let filter = ls.get('ownerFilter', '');   // '' = all, 'followup' = follow up due, or an event id
+let current = null;       // contact being edited, or {isNew:true}
+let form = null;          // {tags:Set, followUp, myNotes}
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.className = 'show';
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = '', 2600);
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clean = s => String(s || '').replace(/^'/, '');   // strip formula-protection quote for display
+const todayStr = (add = 0) => { const d = new Date(); d.setDate(d.getDate() + add); return d.toLocaleDateString('sv-SE'); };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+
+function timeAgo(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return '';
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + ' h ago';
+  const d = Math.round(h / 24);
+  return d < 7 ? d + ' d ago' : new Date(t).toLocaleDateString();
+}
+
+/* ---------- API ---------- */
+async function api(action, data = {}) {
+  // never wait forever: a request that hangs (weak signal at a venue) would hold up everything behind it
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), action === 'addPhoto' ? 90000 : 30000) : null;
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action, token }, data)), signal: ctrl ? ctrl.signal : undefined
+    });
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? 'No answer from the server. Will try again.' : 'No connection. Will try again.');
+  } finally { if (timer) clearTimeout(timer); }
+  let j;
+  try { j = await res.json(); }
+  catch (e) {           // an HTML page instead of an answer: the Apps Script itself is broken or not published
+    serverDown = true; renderBanner();
+    throw new Error('The server is not working. Check the Apps Script (Code and Core) and publish a new version.');
+  }
+  if (serverDown) { serverDown = false; renderBanner(); }
+  if (!j.ok) {
+    if (j.error === 'SESSION_EXPIRED') { signOutLocal(); throw new Error('Please sign in again.'); }
+    throw new Error(j.error || 'Something went wrong.');
+  }
+  return j.data;
+}
+
+/* ---------- offline queue ---------- */
+const queue = () => ls.get('ownerQueue', []);
+function enqueue(op) {
+  let q = queue();
+  if (op.action === 'deleteContact') {
+    const id = op.data.id;
+    const hadAdd = q.some(x => x.action === 'add' && x.data.clientId === id);
+    q = q.filter(x => (x.data.id || x.data.clientId) !== id);            // drop pending edits of this contact
+    if (!hadAdd) q.push(op);                                             // never synced: nothing to delete on the server
+    ls.set('ownerQueue', q);
+    return;
+  }
+  if (op.action === 'update') q = q.filter(x => !(x.action === 'update' && x.data.id === op.data.id));   // keep the newest only
+  if (op.action === 'update') {
+    const pendingAdd = q.find(x => x.action === 'add' && x.data.clientId === op.data.id);
+    if (pendingAdd) { Object.assign(pendingAdd.data, op.data, { clientId: op.data.id }); ls.set('ownerQueue', q); return; }
+  }
+  q.push(op);
+  ls.set('ownerQueue', q);
+}
+// One sync round at a time. A change saved while a round is running is sent in a new round straight
+// after it (before, it waited for the next app switch or reopen: that could take minutes).
+let flushRun = null;
+function flushQueue() {
+  if (!navigator.onLine || !token) return Promise.resolve();
+  if (flushRun) return flushRun.then(() => flushQueue());
+  flushRun = flushRound().finally(() => { flushRun = null; });
+  return flushRun;
+}
+async function flushRound() {
+  const q = queue();
+  if (!q.length) { renderBanner(); return flushPhotos(); }
+  const done = new Set(), added = new Map();          // ops sent (as stored text); new contacts: phone id -> server id
+  let failed = 0;
+  for (const op of q) {
+    try {
+      const r = await api(op.action, op.data);
+      done.add(JSON.stringify(op));
+      if (op.action === 'add') added.set(op.data.clientId, r && r.id ? r.id : op.data.clientId);
+      if (op.action === 'add' && r && r.id && r.id !== op.data.clientId) onMerged(op.data.clientId, r);   // same name: added to an existing contact
+    }
+    catch (e) {
+      if (op.action === 'deleteContact' && /not found/i.test(e.message)) done.add(JSON.stringify(op));   // already gone = done
+      else failed++;
+    }
+  }
+  // Re-read the stored queue: changes saved while this round ran are in there and must stay.
+  // A new contact that was edited during the round was sent as it was: send the edit as an update.
+  const now = queue().filter(op => !done.has(JSON.stringify(op))).map(op =>
+    op.action === 'add' && added.has(op.data.clientId) ? { action: 'update', data: Object.assign({}, op.data, { id: added.get(op.data.clientId) }) } : op);
+  ls.set('ownerQueue', now);
+  renderBanner();
+  await flushPhotos();
+  if (!failed && !now.length) refresh(true);
+  else if (now.length && !failed) return flushRound();
+}
+// keep trying while something waits (a failed request is retried within 20 seconds)
+setInterval(() => { if (token && navigator.onLine && (queue().length || photoQueue.length)) flushQueue(); }, 20000);
+
+/* ---------- same person met twice ---------- */
+// Same rules as the server: case, accents, punctuation, ranks/titles and word order don't matter; one-word names never match.
+const HONORIFICS = new Set(['mr', 'mrs', 'ms', 'miss', 'dr', 'drs', 'ir', 'ing', 'prof', 'mevr', 'dhr', 'hr', 'fr', 'herr', 'frau', 'mme', 'mlle', 'm', 'sir',
+  'cdr', 'ltcdr', 'lcdr', 'lt', 'capt', 'cpt', 'cmdr', 'col', 'ltcol', 'maj', 'gen', 'adm', 'radm', 'vadm', 'cdre', 'sgt', 'kdr', 'kltz', 'ltz', 'kapt', 'kap', 'kol', 'ltkol', 'brig', 'cdt', 'kpt', 'phd', 'msc', 'bsc', 'mba', 'jr', 'sr']);
+function nameKey(name) {
+  const w = clean(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/).filter(x => x && !HONORIFICS.has(x));
+  return w.length >= 2 ? w.sort().join(' ') : '';
+}
+let mergedNotice = '';
+// The server added a new contact to an existing one with the same name: follow it on this phone.
+function onMerged(oldId, c) {
+  contacts = contacts.filter(x => x.id !== oldId);
+  replaceContact(c);
+  photoQueue.forEach(p => { if (p.contactId === oldId) p.contactId = c.id; }); savePhotoQueue();
+  if (current && current.id === oldId) current = contacts.find(x => x.id === c.id) || c;
+  ls.set('ownerRecent', contacts);
+  mergedNotice = clean(c.name);
+}
+// Contacts that may be the same person: same name (but another email address) or same email address.
+function possibleTwins(c) {
+  const key = nameKey(c.name), mail = clean(c.email).toLowerCase();
+  const own = x => x.owner || (me && me.id) || '';
+  return contacts.filter(x => x.id !== c.id && own(x) === own(c) &&
+    ((key && nameKey(x.name) === key) || (mail && clean(x.email).toLowerCase() === mail)));
+}
+function renderTwins(c) {
+  const list = possibleTwins(c), p = $('dupPanel');
+  p.hidden = !list.length;
+  if (!list.length) return;
+  p.innerHTML = '<h2>Possibly the same person</h2><p class="muted small" style="margin-top:0">Merging combines notes, follow-ups, tags and photos into one contact.</p>';
+  list.forEach(x => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:10px';
+    const info = [companyOf(x) && companyOf(x).text, clean(x.email), eventsOf(x).map(e => e.name).join(', '), new Date(x.time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })].filter(Boolean).join(' · ');
+    row.innerHTML = `<div style="flex:1;min-width:0"><a href="#c=${esc(encodeURIComponent(x.id))}">${esc(clean(x.name))}</a><div class="muted small">${esc(info)}</div></div>`;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn ghost'; b.textContent = 'Merge';
+    b.addEventListener('click', () => mergeWith(x));
+    row.appendChild(b);
+    p.appendChild(row);
+  });
+}
+// Hand a contact over to a colleague (other region or product)
+function renderHandover(c) {
+  const owner = c.owner || (me && me.id);
+  const others = people.filter(p => p.id !== owner);
+  const allowed = me && (!c.ownerName || me.role === 'admin');
+  $('handPanel').hidden = !(others.length && allowed);
+  if ($('handPanel').hidden) return;
+  $('handTo').innerHTML = '<option value="">Choose a colleague…</option>' + others.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  $('handMsg').value = '';
+}
+$('handBtn').addEventListener('click', async () => {
+  const c = current, to = $('handTo').value;
+  if (!to) return toast('Choose a colleague.');
+  if (!navigator.onLine) return toast('Handing over needs a connection.');
+  const dirty = $('myNotes').value.trim() !== clean(c.myNotes).trim() || JSON.stringify([...form.tags].sort()) !== JSON.stringify((c.tags || []).slice().sort()) || JSON.stringify(form.tasks) !== JSON.stringify(tasksOf(c));
+  if (dirty) return toast('Save your changes first, then hand over.');
+  if (pendingIds().has(c.id)) { await flushQueue(); if (pendingIds().has(c.id)) return toast('Wait until your changes have synced, then try again.'); }
+  const who = (people.find(p => p.id === to) || {}).name || 'your colleague';
+  if (!confirm('Hand over ' + clean(c.name) + ' to ' + who + '?')) return;
+  $('handBtn').disabled = true;
+  try {
+    const r = await api('transfer', { id: c.id, to, message: $('handMsg').value.trim() });
+    contacts = contacts.filter(x => x.id !== c.id);
+    if (!r.gone) { contacts = contacts.filter(x => x.id !== r.id); contacts.unshift(r); }
+    ls.set('ownerRecent', contacts);
+    toast('Handed over to ' + who);
+    location.hash = r.gone ? '' : 'c=' + encodeURIComponent(r.id);
+  } catch (e) { toast(e.message); }
+  $('handBtn').disabled = false;
+});
+async function mergeWith(x) {
+  const c = current;
+  if (!navigator.onLine) return toast('Merging needs a connection.');
+  if (pendingIds().has(c.id) || pendingIds().has(x.id)) { await flushQueue(); if (pendingIds().has(c.id) || pendingIds().has(x.id)) return toast('Wait until your changes have synced, then try again.'); }
+  if (!confirm('Merge "' + clean(c.name) + '" and "' + clean(x.name) + '" into one contact? Notes, follow-ups, tags and photos are combined. This cannot be undone.')) return;
+  try {
+    const m = await api('merge', { id: c.id, other: x.id });
+    contacts = contacts.filter(y => y.id !== c.id && y.id !== x.id);
+    contacts.unshift(m);
+    ls.set('ownerRecent', contacts);
+    toast('Merged');
+    if (location.hash === '#c=' + encodeURIComponent(m.id)) openContact(m.id); else location.hash = 'c=' + encodeURIComponent(m.id);
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- photos waiting to be sent (kept in IndexedDB: photos are too big for localStorage) ---------- */
+let photoQueue = [], flushingPhotos = false;
+const photoQueueReady = idbGet('photoQueue').then(q => { if (Array.isArray(q)) photoQueue = q; renderBanner(); });
+const savePhotoQueue = () => idbSet('photoQueue', photoQueue);
+const queuedPhotosOf = id => photoQueue.filter(p => p.contactId === id);
+function enqueuePhoto(contactId, url) {
+  photoQueue.push({ qid: uuid(), contactId, url, added: Date.now() });
+  savePhotoQueue(); renderBanner();
+}
+let photoRun = null;
+async function flushPhotos() {
+  await photoQueueReady;
+  if (!navigator.onLine || !token || !photoQueue.length) return;
+  if (photoRun) return photoRun.then(() => flushPhotos());
+  photoRun = photoRound().finally(() => { photoRun = null; });
+  return photoRun;
+}
+async function photoRound() {
+  flushingPhotos = true;
+  let sent = 0;
+  for (const p of photoQueue.slice()) {
+    if (queue().some(o => o.action === 'add' && o.data.clientId === p.contactId)) continue;   // contact itself not synced yet
+    try {
+      const c = await api('addPhoto', { id: p.contactId, dataUrl: p.url, clientId: p.qid });
+      cachePhoto(c.photos[c.photos.length - 1], p.url);
+      replaceContact(c); sent++;
+      photoQueue = photoQueue.filter(x => x.qid !== p.qid);
+    } catch (e) {
+      if (/not found|up to \d+ photos|too large|Only JPEG/i.test(e.message)) {          // will never succeed: drop it
+        photoQueue = photoQueue.filter(x => x.qid !== p.qid);
+        if (!/not found/i.test(e.message)) toast('A photo could not be saved: ' + e.message);
+      } else break;                                                                      // no connection: try again later
+    }
+    savePhotoQueue();
+  }
+  flushingPhotos = false;
+  renderBanner();
+  if (sent) { if (current && !current.isNew && !$('vDetail').hidden) renderPhotos(); if (!$('vList').hidden) renderList(); }
+}
+
+/* ---------- views ---------- */
+function show(view) {
+  ['vLogin', 'vList', 'vDetail', 'vSettings', 'vReport'].forEach(v => $(v).hidden = v !== view);
+  if (!$('camView').hidden) closeCamera();
+  $('saveBar').hidden = view !== 'vDetail';
+  $('addBar').hidden = view !== 'vList';
+  window.scrollTo(0, 0);
+}
+
+function route() {
+  if (!token) return show('vLogin');
+  const h = location.hash;
+  if (h.startsWith('#c=')) return openContact(decodeURIComponent(h.slice(3)));
+  if (h === '#add') return openAdd();
+  if (h === '#settings') return openSettings();
+  if (h.startsWith('#report=')) return openReport(decodeURIComponent(h.slice(8)));
+  listMode = h === '#followups' ? 'tasks' : 'contacts';
+  renderList(); show('vList');
+}
+window.addEventListener('hashchange', route);
+
+let serverDown = false;
+function renderBanner() {
+  const q = queue().length + photoQueue.length;
+  $('netBanner').innerHTML = !navigator.onLine
+    ? `<div class="banner offline">You're offline. Changes are saved on this phone and sync automatically.</div>`
+    : serverDown ? `<div class="banner offline">The server is not working${q ? ' (' + q + ' change' + (q > 1 ? 's' : '') + ' waiting)' : ''}. Changes are kept on this phone. Ask your administrator to check the Apps Script.</div>`
+    : q ? `<div class="banner sync">${q} change${q > 1 ? 's' : ''} waiting to sync…</div>` : '';
+}
+
+function pendingIds() { return new Set(queue().filter(o => o.action !== 'deleteContact').map(o => o.data.id || o.data.clientId).concat(photoQueue.map(p => p.contactId))); }
+
+/* ---------- company, events, search ---------- */
+const FREEMAIL = /^(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|icloud|me|mac|aol|gmx|web|proton|protonmail|pm|ziggo|kpnmail|kpnplanet|planet|hetnet|home|xs4all|telfort|chello|upcmail|zonnet|quicknet|online|t-online|freenet|orange|wanadoo|free|laposte|libero|mail|yandex|zoho)\./i;
+// Company as typed by the scanner; otherwise the domain of a work email, shown as a guess
+const webUrl = w => { w = clean(w).trim(); if (!w || /\s/.test(w)) return ''; const u = /^https?:\/\//i.test(w) ? w : 'https://' + w; try { return new URL(u).protocol === 'https:' || new URL(u).protocol === 'http:' ? u : ''; } catch (e) { return ''; } };
+function companyOf(c) {
+  const co = clean(c.company);
+  if (co) return { text: co, guess: false };
+  const dom = (clean(c.email).split('@')[1] || '').toLowerCase();
+  return dom && !FREEMAIL.test(dom) ? { text: dom, guess: true } : null;
+}
+const localDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('sv-SE'); };
+const eventsOf = c => { const d = localDate(c.time); return d ? events.filter(e => d >= e.start && d <= e.end) : []; };
+const fold = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtRange = e => e.start === e.end ? fmtDate(e.start) : fmtDate(e.start) + ' – ' + fmtDate(e.end);
+
+function visibleContacts() {
+  const words = fold($('q').value).split(/\s+/).filter(Boolean);
+  const today = todayStr();
+  return contacts.filter(c => {
+    if (filter === 'mine' ? c.ownerName : filter === 'followup' ? !(c.followUp && c.followUp <= today) : filter && !eventsOf(c).some(e => e.id === filter)) return false;
+    if (!words.length) return true;
+    const co = companyOf(c);
+    const hay = fold([clean(c.name), co ? co.text : '', clean(c.email), clean(c.title), (c.tags || []).join(' ')].join(' '));
+    return words.every(w => hay.includes(w));
+  });
+}
+
+function renderFilters() {
+  const shared = contacts.some(c => c.ownerName);
+  if (filter && filter !== 'followup' && !(filter === 'mine' && shared) && !events.some(e => e.id === filter)) { filter = ''; ls.set('ownerFilter', ''); }
+  const box = $('filters'); box.innerHTML = '';
+  const add = (label, val) => box.appendChild(chip(label, filter === val, '', () => {
+    filter = filter === val && val ? '' : val; ls.set('ownerFilter', filter); renderList();
+  }));
+  add('All', '');
+  if (shared) add('Mine', 'mine');
+  const due = contacts.filter(c => c.followUp && c.followUp <= todayStr()).length;
+  if (due) add('Follow up (' + due + ')', 'followup');
+  events.forEach(e => add(e.name, e.id));
+  const on = box.querySelector('.on'); if (on && on.scrollIntoView && filter) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function renderList() {
+  renderBanner();
+  renderTabs();
+  if (listMode === 'tasks') return renderTaskList();
+  renderFilters();
+  const list = $('list');
+  const shown = visibleContacts();
+  const searching = $('q').value.trim();
+  $('count').textContent = contacts.length ? shown.length + (shown.length === 1 ? ' contact' : ' contacts') : '';
+  $('exportBtn').hidden = !shown.length;
+  $('reportBtn').hidden = !events.some(e => e.id === filter);
+  if (!contacts.length) { list.innerHTML = `<div class="empty">No contacts yet.<br>They appear here as soon as someone shares their details.</div>`; return; }
+  if (!shown.length) { list.innerHTML = `<div class="empty">${searching ? 'No contacts match your search.' : 'No contacts in this selection.'}</div>`; return; }
+  const pend = pendingIds();
+  const today = todayStr();
+  list.innerHTML = '';
+  shown.forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'item';
+    const isNew = seenUpTo && c.time > seenUpTo && !c.myNotes && !(c.tags || []).length;
+    const co = companyOf(c);
+    const evs = filter && filter !== 'followup' && filter !== 'mine' ? [] : eventsOf(c);
+    const meta = [c.cardId && c.source === 'card' ? 'via ' + c.cardId : (c.source !== 'card' ? srcLabel(c.source) : ''), c.ownerName ? 'collected by ' + c.ownerName : ''].filter(Boolean).join(' · ');
+    const badges = evs.map(e => `<span class="badge event">${esc(e.name)}</span>`).join('') +
+      (c.tags || []).map(t => `<span class="badge ${TEMPS.includes(t) ? t : ''}">${esc(tagLabel(t))}</span>`).join('') +
+      (c.followUp ? `<span class="badge ${c.followUp <= today ? 'due' : ''}">Follow up ${c.followUp <= today ? 'now' : c.followUp}</span>` : '') +
+      ((c.photos || []).length + queuedPhotosOf(c.id).length ? `<span class="badge">${(c.photos || []).length + queuedPhotosOf(c.id).length} photo${(c.photos || []).length + queuedPhotosOf(c.id).length > 1 ? 's' : ''}</span>` : '') +
+      (pend.has(c.id) ? `<span class="badge pending">Not synced yet</span>` : '');
+    b.innerHTML = `<div class="top"><span class="name">${isNew ? '<span class="new"></span>' : ''}${esc(clean(c.name))}</span><span class="time">${esc(timeAgo(c.time))}</span></div>` +
+      (co ? `<div class="company${co.guess ? ' guess' : ''}">${esc(co.text)}${c.title ? ` <span class="muted small">· ${esc(clean(c.title))}</span>` : ''}</div>` : (c.title ? `<div class="company">${esc(clean(c.title))}</div>` : '')) +
+      (meta ? `<div class="sub">${esc(meta)}</div>` : '') + (badges ? `<div class="badges">${badges}</div>` : '');
+    b.addEventListener('click', () => { location.hash = 'c=' + encodeURIComponent(c.id); });
+    list.appendChild(b);
+  });
+}
+/* ---------- Follow-ups tab: every open follow-up of your contacts, with the trade show it came from ---------- */
+function allTasks() {
+  const out = [];
+  contacts.forEach(c => {
+    if (c.ownerName) return;                                   // someone else's contact (shared address book)
+    const ev = eventsOf(c)[0];
+    tasksOf(c).forEach(t => out.push({ t, c, ev }));
+  });
+  return out;
+}
+function renderTabs() {
+  const today = todayStr();
+  const due = allTasks().filter(x => !x.t.done && x.t.due && x.t.due <= today).length;
+  $('taskNum').hidden = !due; $('taskNum').textContent = due;
+  $('tabContacts').classList.toggle('on', listMode === 'contacts');
+  $('tabTasks').classList.toggle('on', listMode === 'tasks');
+  $('taskView').hidden = listMode !== 'tasks';
+  $('contactView').hidden = listMode === 'tasks';
+  $('exportBtn').hidden = listMode === 'tasks' || !contacts.length;
+  document.querySelector('#vList h1').textContent = listMode === 'tasks' ? 'Follow-ups' : 'Contacts';
+}
+$('tabContacts').addEventListener('click', () => { if (location.hash) location.hash = ''; else { listMode = 'contacts'; renderList(); } });
+$('tabTasks').addEventListener('click', () => { location.hash = 'followups'; });
+
+// Change a contact from the Follow-ups tab (tick off, snooze) without opening it; works offline like any edit.
+async function quickUpdate(c, change) {
+  const tasks = tasksOf(c).map(t => Object.assign({}, t));
+  const notes = change(tasks, clean(c.myNotes)) ;
+  const data = { id: c.id, myNotes: notes, tags: c.tags || [], tasks, followUp: nextDue(tasks), title: clean(c.title), website: clean(c.website) };
+  Object.assign(c, data);
+  ls.set('ownerRecent', contacts);
+  enqueue({ action: 'update', data });
+  renderList();
+  await flushQueue();
+}
+
+function renderTaskList() {
+  const today = todayStr(), week = todayStr(7);
+  const items = allTasks();
+  // event filter: only shows that have follow-ups
+  const evs = events.filter(e => items.some(x => x.ev && x.ev.id === e.id && !x.t.done));
+  if (taskFilter && !evs.some(e => e.id === taskFilter)) taskFilter = '';
+  const fb = $('taskFilters'); fb.innerHTML = '';
+  if (evs.length) {
+    fb.appendChild(chip('All shows', !taskFilter, '', () => { taskFilter = ''; renderList(); }));
+    evs.forEach(e => fb.appendChild(chip(e.name, taskFilter === e.id, '', () => { taskFilter = taskFilter === e.id ? '' : e.id; renderList(); })));
+  }
+  const shown = items.filter(x => !taskFilter || (x.ev && x.ev.id === taskFilter));
+  const open = shown.filter(x => !x.t.done).sort((a, b) => ((a.t.due || '9999') < (b.t.due || '9999') ? -1 : (a.t.due || '9999') > (b.t.due || '9999') ? 1 : 0));
+  const groups = [
+    ['Overdue', x => x.t.due && x.t.due < today, 'late'],
+    ['Today', x => x.t.due === today],
+    ['Tomorrow', x => x.t.due === todayStr(1)],
+    ['This week', x => x.t.due > todayStr(1) && x.t.due <= week],
+    ['Later', x => x.t.due > week],
+    ['No date', x => !x.t.due]
+  ];
+  const list = $('taskList'); list.innerHTML = '';
+  if (!open.length) list.innerHTML = `<div class="empty">${items.length ? 'All follow-ups are done.' : 'No follow-ups yet.<br>Open a contact and add one under <b>Follow-ups</b>, or tap a next step such as "Send quote".'}</div>`;
+  groups.forEach(([label, test, cls]) => {
+    const g = open.filter(test);
+    if (!g.length) return;
+    const h = document.createElement('div'); h.className = 'tgroup' + (cls ? ' ' + cls : ''); h.textContent = label + ' · ' + g.length;
+    list.appendChild(h);
+    g.forEach(x => list.appendChild(taskCard(x)));
+  });
+  const done = shown.filter(x => x.t.done && (!x.t.doneAt || x.t.doneAt >= todayStr(-14)));
+  if (done.length) {
+    const d = document.createElement('details');
+    d.innerHTML = `<summary class="tgroup" style="cursor:pointer">Done (last 2 weeks) · ${done.length}</summary>`;
+    done.forEach(x => d.appendChild(taskCard(x)));
+    list.appendChild(d);
+  }
+}
+
+function taskCard({ t, c, ev }) {
+  const el = document.createElement('div'); el.className = 'task' + (t.done ? ' done' : '');
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Done: ' + t.text);
+  cb.addEventListener('change', () => quickUpdate(c, (tasks, notes) => {
+    const x = tasks.find(y => y.id === t.id); if (!x) return notes;
+    x.done = cb.checked; x.doneAt = cb.checked ? todayStr() : '';
+    if (cb.checked) toast('Done: ' + t.text);
+    return cb.checked ? doneNote(notes, x) : notes;
+  }));
+  const body = document.createElement('div'); body.className = 'tbody';
+  const co = companyOf(c);
+  const late = !t.done && t.due && t.due < todayStr();
+  body.innerHTML = `<div class="ttext">${esc(t.text)}</div>
+    <div class="twho">${esc(clean(c.name))}${co ? ' · ' + esc(co.text) : ''}</div>
+    <div class="tmeta">${ev ? `<span class="badge show">${esc(ev.name)}</span>` : ''}<span class="tdue${late ? ' late' : ''}">${esc(t.done ? 'Done ' + (t.doneAt ? fmtDate(t.doneAt) : '') : dueLabel(t.due))}</span></div>`;
+  body.addEventListener('click', () => { location.hash = 'c=' + encodeURIComponent(c.id); });
+  if (!t.done) {
+    const acts = document.createElement('div'); acts.className = 'tacts';
+    const email = clean(c.email), phone = clean(c.phone);
+    if (email) { const a = document.createElement('a'); a.href = '#'; a.textContent = 'Email'; a.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); location.href = followUpMailto(c); }); acts.appendChild(a); }
+    if (phone) { const a = document.createElement('a'); a.href = 'tel:' + phone.replace(/[^\d+]/g, ''); a.textContent = 'Call'; a.addEventListener('click', e => e.stopPropagation()); acts.appendChild(a); }
+    [['+1 day', 1], ['+1 week', 7]].forEach(([label, days]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        quickUpdate(c, (tasks, notes) => {
+          const x = tasks.find(y => y.id === t.id);
+          if (x) { const base = x.due && x.due > todayStr() ? new Date(x.due + 'T12:00:00') : new Date(); base.setDate(base.getDate() + days); x.due = base.toLocaleDateString('sv-SE'); }
+          return notes;
+        });
+        toast('Moved to ' + fmtDate(t.due && t.due > todayStr() ? (() => { const d = new Date(t.due + 'T12:00:00'); d.setDate(d.getDate() + days); return d.toLocaleDateString('sv-SE'); })() : todayStr(days)));
+      });
+      acts.appendChild(b);
+    });
+    body.appendChild(acts);
+  }
+  el.append(cb, body);
+  return el;
+}
+
+let qTimer;
+$('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(renderList, 120); });
+
+async function refresh(silent) {
+  if (!navigator.onLine) { renderBanner(); return; }
+  try {
+    const [fresh, evs, who, qp, ppl] = await Promise.all([api('recent', { limit: 5000 }), api('events').catch(() => null), api('me').catch(() => null), api('quickPicks').catch(() => null), api('people').catch(() => null)]);
+    if (Array.isArray(ppl)) { people = ppl; ls.set('ownerPeople', people); }
+    if (qp && Array.isArray(qp.team)) { picks = qp; ls.set('ownerPicks', picks); }
+    if (Array.isArray(evs)) { events = evs; ls.set('ownerEvents', events); }
+    if (who && who.profile) { me = who; ls.set('ownerMe', me); }
+    // keep local, not-yet-synced edits visible
+    const q = queue();
+    q.forEach(op => {
+      if (op.action === 'update') { const c = fresh.find(x => x.id === op.data.id); if (c) Object.assign(c, op.data); }
+      if (op.action === 'add' && !fresh.some(x => x.id === op.data.clientId)) fresh.unshift(localFromAdd(op.data));
+    });
+    const deleting = new Set(q.filter(op => op.action === 'deleteContact').map(op => op.data.id));
+    contacts = fresh.filter(c => !deleting.has(c.id));
+    ls.set('ownerRecent', contacts);
+    if (!$('vList').hidden) renderList();
+  } catch (e) { if (!silent) toast(e.message); }
+}
+
+/* ---------- detail ---------- */
+function chip(label, on, extraClass, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'chip' + (on ? ' on' : '') + (extraClass ? ' ' + extraClass : '');
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/* ---------- quick picks ---------- */
+const STARTER = [{ id: 'next', name: 'Next steps', options: ACTIONS, multi: true, events: [], task: true }];
+const mySets = () => (Array.isArray(picks.mine) ? picks.mine : STARTER);
+const allSets = () => (picks.team || []).map(g => Object.assign({ team: true }, g)).concat(mySets());
+const pickTag = (g, o) => g.name + ': ' + o;
+// older contacts have plain answers ("Send datasheet") from before the sets existed
+const pickOn = (g, o, tags) => tags.has(pickTag(g, o)) || tags.has(o);
+const TYPE_SET = 'Organisation type', TYPE_PREFIX = TYPE_SET + ': ';
+const typeOf = c => { const t = (c.tags || []).find(x => x.startsWith(TYPE_PREFIX)); return t ? t.slice(TYPE_PREFIX.length) : ''; };
+function setsFor(c) {
+  const evs = c && !c.isNew ? eventsOf(c) : eventsOf({ time: new Date().toISOString() });
+  const evIds = evs.map(e => e.id);
+  // the event's organisation types (B2G, B2B, …) come first, as a one-answer set
+  const types = [];
+  evs.forEach(e => (e.types || []).forEach(t => { if (!types.includes(t)) types.push(t); }));
+  const has = form && [...form.tags].find(t => t.startsWith(TYPE_PREFIX));
+  if (has && !types.includes(has.slice(TYPE_PREFIX.length))) types.push(has.slice(TYPE_PREFIX.length));
+  const typeSet = types.length ? [{ id: '_type', name: TYPE_SET, options: types, multi: false, isType: true }] : [];
+  return typeSet.concat(allSets().filter(g => !g.events || !g.events.length || g.events.some(id => evIds.includes(id))));
+}
+// a hint from earlier contacts at the same organisation ("Other contacts at Damen: B2B")
+function typeHint() {
+  const co = (current && current.isNew ? $('aCompany').value : current && companyOf(current) ? companyOf(current).text : '').trim().toLowerCase();
+  if (!co) return '';
+  const other = contacts.find(x => x !== current && typeOf(x) && (companyOf(x) || {}).text && companyOf(x).text.trim().toLowerCase() === co);
+  return other ? 'Other contacts at ' + companyOf(other).text + ': ' + typeOf(other) : '';
+}
+function renderPicks() {
+  const box = $('pickPanels'); box.innerHTML = '';
+  setsFor(current).forEach(g => {
+    const panel = document.createElement('div'); panel.className = 'panel';
+    panel.innerHTML = `<h2>${esc(g.name)}${g.team ? ' <span class="badge team">team</span>' : ''}</h2>`;
+    const row = document.createElement('div'); row.className = 'chips';
+    g.options.forEach(o => row.appendChild(chip(o, pickOn(g, o, form.tags), '', () => {
+      const was = pickOn(g, o, form.tags);
+      if (!g.multi) g.options.forEach(x => { form.tags.delete(pickTag(g, x)); form.tags.delete(x); });
+      form.tags.delete(o);
+      if (was) form.tags.delete(pickTag(g, o)); else form.tags.add(pickTag(g, o));
+      if (!was && g.task && addTask(o, todayStr(7))) toast('Follow-up added: ' + o + ' (in 1 week)');
+      renderChips();
+    })));
+    panel.appendChild(row);
+    if (g.isType && !g.options.some(o => pickOn(g, o, form.tags)) && typeHint()) {
+      const h = document.createElement('p'); h.className = 'small muted'; h.style.margin = '8px 0 0'; h.textContent = typeHint();
+      panel.appendChild(h);
+    }
+    box.appendChild(panel);
+  });
+}
+const tagLabel = t => (t.includes(': ') ? t.slice(t.indexOf(': ') + 2) : t);
+
+function renderChips() {
+  const t = $('tempChips'); t.innerHTML = '';
+  TEMPS.forEach(x => t.appendChild(chip(x, form.tags.has(x), x, () => { TEMPS.forEach(y => form.tags.delete(y)); if (!t.querySelector('.on.' + x)) form.tags.add(x); renderChips(); })));
+  renderPicks();
+  const f = $('followChips'); f.innerHTML = '';
+  FOLLOW.forEach(([label, days]) => {
+    const d = todayStr(days);
+    f.appendChild(chip(label, form.newDue === d, '', () => { form.newDue = form.newDue === d ? '' : d; $('followDate').value = form.newDue; renderChips(); }));
+  });
+  f.appendChild(chip('No date', !form.newDue, '', () => { form.newDue = ''; $('followDate').value = ''; renderChips(); }));
+  renderTaskRows();
+}
+$('followDate').addEventListener('change', e => { form.newDue = e.target.value; renderChips(); });
+
+/* ---------- follow-ups on a contact ---------- */
+const nextDue = tasks => tasks.filter(t => !t.done && t.due).map(t => t.due).sort()[0] || '';
+const shortId = () => Math.random().toString(36).slice(2, 8);
+// contacts from before version 2.12 have one follow-up date and no list
+function tasksOf(c) {
+  const t = Array.isArray(c.tasks) ? c.tasks : [];
+  return t.length || !c.followUp ? t : [{ id: 'f' + String(c.id).slice(0, 5).replace(/[^0-9a-z]/gi, '0'), text: 'Follow up', due: c.followUp, done: false, doneAt: '' }];
+}
+function dueLabel(d) {
+  if (!d) return 'No date';
+  const today = todayStr(), tom = todayStr(1);
+  if (d < today) return 'Overdue · ' + fmtDate(d);
+  if (d === today) return 'Today';
+  if (d === tom) return 'Tomorrow';
+  return fmtDate(d);
+}
+function doneNote(notes, t) {
+  const line = 'Done ' + new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ': ' + t.text;
+  return notes.includes(line) ? notes : (notes ? notes + '\n' : '') + line;
+}
+function renderTaskRows() {
+  const box = $('taskRows'); box.innerHTML = '';
+  form.followUp = nextDue(form.tasks);
+  $('calRow').hidden = !form.followUp;
+  const order = form.tasks.slice().sort((a, b) => (a.done - b.done) || ((a.due || '9999') < (b.due || '9999') ? -1 : 1));
+  if (!order.length) box.innerHTML = '<p class="small muted" style="margin:0">No follow-ups yet.</p>';
+  order.forEach(t => {
+    const row = document.createElement('div'); row.className = 'trow' + (t.done ? ' done' : '');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Done');
+    cb.addEventListener('change', () => {
+      t.done = cb.checked; t.doneAt = cb.checked ? todayStr() : '';
+      if (cb.checked) $('myNotes').value = doneNote($('myNotes').value, t);
+      renderTaskRows();
+    });
+    const tt = document.createElement('div'); tt.className = 'tt'; tt.textContent = t.text;
+    const di = document.createElement('input'); di.type = 'date'; di.value = t.due || ''; di.setAttribute('aria-label', 'Date');
+    di.addEventListener('change', () => { t.due = di.value; renderTaskRows(); });
+    const x = document.createElement('button'); x.className = 'x'; x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove');
+    x.addEventListener('click', () => { form.tasks = form.tasks.filter(y => y !== t); renderTaskRows(); });
+    row.append(cb, tt, di, x); box.appendChild(row);
+  });
+}
+function addTask(text, due) {
+  text = String(text || '').trim();
+  if (!text) return false;
+  if (form.tasks.some(t => !t.done && t.text.toLowerCase() === text.toLowerCase())) return false;
+  form.tasks.push({ id: shortId(), text, due: due || '', done: false, doneAt: '' });
+  renderTaskRows();
+  return true;
+}
+$('taskAdd').addEventListener('click', () => {
+  const text = $('taskText').value.trim();
+  if (!text) { toast('Type what needs to happen, e.g. "Send quote".'); $('taskText').focus(); return; }
+  if (addTask(text, form.newDue)) { $('taskText').value = ''; toast('Follow-up added'); }
+});
+$('taskText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('taskAdd').click(); } });
+
+function openContact(id) {
+  const c = contacts.find(x => x.id === id);
+  if (!c) {
+    // e.g. opened from a notification before the list was refreshed
+    show('vDetail'); $('dTitle').textContent = 'Loading…'; $('dInfo').innerHTML = '';
+    api('contact', { id }).then(fresh => { contacts.unshift(fresh); ls.set('ownerRecent', contacts); openContact(id); })
+      .catch(e => { toast(e.message); location.hash = ''; });
+    return;
+  }
+  current = c;
+  form = { tags: new Set(c.tags), followUp: c.followUp || '', myNotes: clean(c.myNotes), tasks: tasksOf(c).map(t => Object.assign({}, t)), newDue: todayStr(7) };
+  if (c.time > seenUpTo) { seenUpTo = c.time; ls.set('ownerSeen', seenUpTo); }
+  $('dTitle').textContent = clean(c.name);
+  const phone = clean(c.phone), email = clean(c.email);
+  const wa = phone.replace(/[^\d+]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  $('dInfo').innerHTML = `<div class="panel">
+      <div style="font-weight:600;font-size:1.1rem">${esc(clean(c.name))}</div>
+      ${companyOf(c) ? `<div style="margin-top:2px">${esc(companyOf(c).text)}${companyOf(c).guess ? ' <span class="muted small">(from email)</span>' : ''}</div>` : ''}
+      <div class="muted small">${esc([c.ownerName ? 'Collected by ' + c.ownerName : '', eventsOf(c).map(e => e.name).join(', '), new Date(c.time).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), c.cardId ? 'card ' + c.cardId : '', c.source !== 'card' ? srcLabel(c.source) : ''].filter(Boolean).join(' · '))}</div>
+      ${c.title ? `<div class="small">${esc(clean(c.title))}</div>` : ''}
+      ${phone || email ? `<div class="small" style="margin-top:8px">${esc([phone, email].filter(Boolean).join(' · '))}</div>` : ''}
+      ${webUrl(c.website) ? `<div class="small" style="margin-top:4px"><a href="${esc(webUrl(c.website))}" target="_blank" rel="noopener">${esc(clean(c.website).replace(/^https?:\/\//, ''))}</a></div>` : ''}
+      ${c.note ? `<div class="theirnote"><span class="muted small">Their note</span><br>${esc(clean(c.note))}</div>` : ''}
+      <div class="actions">
+        ${phone ? `<a href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">Call</a>` : ''}
+        ${phone && /^(\+|00)/.test(phone) ? `<a href="https://wa.me/${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+        ${email ? `<a href="mailto:${esc(email)}">Email</a>` : ''}
+      </div>
+      <div class="actions" style="margin-top:8px">${email ? `<a href="#" id="fuMail">Follow-up email</a>` : ''}<a href="#" id="vcfBtn">Save to phone contacts</a></div>
+    </div>`;
+  $('addFields').hidden = true;
+  if ($('fuMail')) $('fuMail').addEventListener('click', ev => { ev.preventDefault(); location.href = followUpMailto(current); });
+  $('vcfBtn').addEventListener('click', ev => { ev.preventDefault(); saveVcard(current); });
+  $('deletePanel').hidden = false;
+  renderTwins(c);
+  renderHandover(c);
+  $('workPanel').hidden = false;
+  $('eTitle').value = clean(c.title); $('eWebsite').value = clean(c.website);
+  pendingPhotos = [];
+  renderPhotos();
+  $('myNotes').value = form.myNotes;
+  $('followDate').value = form.newDue; $('taskText').value = '';
+  $('saveBtn').textContent = 'Save';
+  renderChips();
+  show('vDetail');
+}
+
+function openAdd() {
+  current = { isNew: true, id: uuid() };
+  scanBase = null;
+  form = { tags: new Set(), followUp: '', myNotes: '', tasks: [], newDue: todayStr(7) };
+  $('dTitle').textContent = 'Add contact';
+  $('dInfo').innerHTML = '';
+  $('addFields').hidden = false;
+  $('deletePanel').hidden = true;
+  $('dupPanel').hidden = true;
+  $('handPanel').hidden = true;
+  pendingPhotos = [];
+  renderPhotos();
+  ['aName', 'aPhone', 'aEmail', 'aCompany', 'aTitle', 'aWebsite'].forEach(k => $(k).value = '');
+  $('workPanel').hidden = true;
+  $('scanStatus').textContent = 'Reads the text on your phone. Nothing is sent to other services.';
+  $('scanTextBox').hidden = true; $('scanTextBox').open = false; $('scanQrLink').hidden = true; markChecks([]); $('scanLines').innerHTML = ''; $('lineTargets').hidden = true;
+  $('myNotes').value = ''; $('followDate').value = form.newDue; $('taskText').value = '';
+  $('saveBtn').textContent = 'Add contact';
+  renderChips();
+  show('vDetail');
+  setTimeout(() => $('aName').focus(), 50);
+}
+
+function localFromAdd(d) {
+  return { id: d.clientId, time: d.clientTimestamp, name: d.name, email: d.email, phone: d.phone, company: d.company,
+           note: '', cardId: '', myNotes: d.myNotes, tags: d.tags, followUp: d.followUp, updated: '', source: d.source, photos: [], title: d.title || '', website: d.website || '', tasks: d.tasks || [] };
+}
+
+$('saveBtn').addEventListener('click', async () => {
+  // a follow-up typed but not added yet is added on save
+  if ($('taskText').value.trim()) addTask($('taskText').value, form.newDue);
+  const data = { myNotes: $('myNotes').value.trim(), tags: Array.from(form.tags), tasks: form.tasks, followUp: nextDue(form.tasks) };
+  let op;
+  if (current.isNew) {
+    const name = $('aName').value.trim();
+    if (!name) { toast('Please enter a name.'); $('aName').focus(); return; }
+    const email = $('aEmail').value.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Please check the email address.'); return; }
+    Object.assign(data, { clientId: current.id, clientTimestamp: new Date().toISOString(), name, email,
+      phone: $('aPhone').value.trim(), company: $('aCompany').value.trim(), title: $('aTitle').value.trim(), website: $('aWebsite').value.trim(), source: $('aSource').value });
+    op = { action: 'add', data };
+    recordScan();
+    contacts.unshift(localFromAdd(data));
+  } else {
+    data.id = current.id;
+    data.title = $('eTitle').value.trim();
+    data.website = $('eWebsite').value.trim();
+    op = { action: 'update', data };
+    Object.assign(current, data);
+  }
+  ls.set('ownerRecent', contacts);
+  enqueue(op);
+  $('saveBtn').disabled = true;
+  mergedNotice = '';
+  await flushQueue();
+  $('saveBtn').disabled = false;
+  const stillQueued = queue().some(o => (o.data.id || o.data.clientId) === (data.id || data.clientId));
+  const photosToSend = current.isNew ? pendingPhotos.slice() : [];
+  pendingPhotos = [];
+  location.hash = '';
+  // merged into an existing contact? then the photos go there
+  const savedId = data.clientId && !contacts.some(x => x.id === data.clientId) && current ? current.id : data.clientId;
+  photosToSend.forEach(url => enqueuePhoto(savedId, url));
+  if (photosToSend.length) await flushPhotos();
+  const waitingNow = stillQueued || (photosToSend.length && queuedPhotosOf(savedId).length);
+  if (mergedNotice && !waitingNow) { toast('Same name found: added to your existing contact ' + mergedNotice); mergedNotice = ''; return; }
+  toast(waitingNow ? 'Saved on this phone. Will sync when online.' : photosToSend.length ? 'Saved with ' + photosToSend.length + ' photo' + (photosToSend.length > 1 ? 's' : '') : 'Saved');
+});
+
+/* ---------- settings & push ---------- */
+/* ---------- contact photos ---------- */
+let pendingPhotos = [];                 // photos picked while adding a new contact (uploaded after it is saved)
+const photoMem = new Map();             // photo id -> data URL (also kept in IndexedDB for offline viewing)
+function cachePhoto(id, url) { photoMem.set(id, url); idbSet('photo:' + id, url); }
+async function photoUrl(contactId, pid) {
+  if (photoMem.has(pid)) return photoMem.get(pid);
+  const stored = await idbGet('photo:' + pid);
+  if (stored) { photoMem.set(pid, stored); return stored; }
+  const url = await api('photo', { id: contactId, photo: pid });
+  cachePhoto(pid, url);
+  return url;
+}
+function replaceContact(c) {
+  const i = contacts.findIndex(x => x.id === c.id);
+  if (i >= 0) contacts[i] = Object.assign(contacts[i], c); else contacts.unshift(c);
+  if (current && current.id === c.id) Object.assign(current, c);
+  ls.set('ownerRecent', contacts);
+}
+
+function renderPhotos() {
+  const grid = $('photoGrid'); grid.innerHTML = '';
+  const isNew = current && current.isNew;
+  const ids = isNew ? [] : (current.photos || []);
+  const waiting = isNew ? [] : queuedPhotosOf(current.id);
+  const count = isNew ? pendingPhotos.length : ids.length + waiting.length;
+  const add = (src, onOpen, loading) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'thumb' + (loading ? ' loading' : '');
+    if (src) { const img = document.createElement('img'); img.src = src; img.alt = 'Photo'; b.appendChild(img); }
+    b.addEventListener('click', onOpen); grid.appendChild(b); return b;
+  };
+  if (isNew) pendingPhotos.forEach((url, i) => add(url, () => openViewer(url, () => { pendingPhotos.splice(i, 1); renderPhotos(); })));
+  else ids.forEach(pid => {
+    const b = add(photoMem.get(pid), () => { const u = photoMem.get(pid); if (u) openViewer(u, () => deletePhoto(current.id, pid)); }, !photoMem.has(pid));
+    if (!photoMem.has(pid)) photoUrl(current.id, pid).then(url => {
+      b.classList.remove('loading'); const img = document.createElement('img'); img.src = url; img.alt = 'Photo'; b.appendChild(img);
+    }).catch(() => { b.classList.remove('loading'); b.textContent = navigator.onLine ? '!' : 'Offline'; });
+  });
+  waiting.forEach(p => {
+    const b = add(p.url, () => openViewer(p.url, () => { photoQueue = photoQueue.filter(x => x.qid !== p.qid); savePhotoQueue(); renderBanner(); renderPhotos(); }));
+    b.classList.add('waiting'); b.title = 'Not sent yet';
+  });
+  const full = count >= 6;
+  $('addPhotoBtn').classList.toggle('off', full);
+  $('addPhotoBtn').querySelector('span').textContent = full ? 'Maximum of 6 photos' : count ? 'Add another photo' : 'Add photo';
+}
+
+// Shrink to max 1600 px JPEG on the phone: faster upload, small enough for the sheet's Drive folder
+async function shrink(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) {
+    bmp = await new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('This photo could not be read. Try a JPEG or PNG.')); img.src = URL.createObjectURL(file); });
+  }
+  const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight;
+  // 1280 px and JPEG quality 0.75: sharp on a phone screen, about 150–300 KB (a phone photo is 3–5 MB)
+  const scale = Math.min(1, 1280 / Math.max(w, h));
+  const cv = document.createElement('canvas'); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  let q = 0.75, url = cv.toDataURL('image/jpeg', q);
+  while (url.length > 3.5e6 && q > 0.4) { q -= 0.15; url = cv.toDataURL('image/jpeg', q); }
+  return url;
+}
+
+$('photoInput').addEventListener('change', async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file || !current) return;
+  let url;
+  try { url = await shrink(file); } catch (err) { toast(err.message); return; }
+  if (current.isNew) { pendingPhotos.push(url); renderPhotos(); return; }
+  // every photo goes through the waiting list: sent now when online, later when not
+  const id = current.id;
+  enqueuePhoto(id, url);
+  renderPhotos();
+  if (!navigator.onLine) { toast('Photo saved on this phone. It is sent when you are online.'); return; }
+  await flushPhotos();
+  if (queuedPhotosOf(id).length) toast('Photo saved on this phone. It is sent when the connection is better.');
+  else toast('Photo added');
+});
+
+/* ---------- scan a business card or badge (text reader runs on the phone) ---------- */
+const loaded = {};
+function loadScript(src) {
+  return loaded[src] || (loaded[src] = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.onload = res;
+    s.onerror = () => { delete loaded[src]; rej(new Error('The text reader could not be loaded. Check your connection and try again.')); };
+    document.head.appendChild(s);
+  }));
+}
+// Languages for the text reader: English always; others chosen in Settings (each adds a download of 1–3 MB).
+const OCR_LANGS = [['fra', 'French'], ['deu', 'German'], ['nld', 'Dutch'], ['nor', 'Norwegian'], ['pol', 'Polish'], ['hrv', 'Croatian']];
+const ocrLangs = () => ['eng'].concat(ls.get('ocrLangs', ['fra', 'deu']).filter(l => OCR_LANGS.some(x => x[0] === l)));
+let ocrWorker = null, ocrWorkerLangs = '';
+async function getOcr(progress) {
+  const langs = ocrLangs().join('+');
+  if (ocrWorker && ocrWorkerLangs === langs) return ocrWorker;
+  if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) {} ocrWorker = null; }
+  await loadScript('ocr/tesseract.min.js');
+  const base = new URL('ocr/', location.href).href;
+  ocrWorker = await Tesseract.createWorker(langs.split('+'), 1, {
+    workerPath: base + 'worker.min.js', corePath: base, langPath: base + 'lang', gzip: true, workerBlobURL: false,
+    logger: m => { if (m.status && /loading|initializ/.test(m.status) && m.progress < 1) progress('Preparing the text reader (first time only)… ' + Math.round(m.progress * 100) + '%'); }
+  });
+  ocrWorkerLangs = langs;
+  return ocrWorker;
+}
+
+function loadImage(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('This photo could not be read. Try a JPEG or PNG.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function qrFrom(img) {
+  const fn = window.jsQRmod && (window.jsQRmod.default || window.jsQRmod);
+  if (!fn) return '';
+  // a small QR code on a full-size phone photo is only found at a higher resolution: try a few sizes
+  const long = Math.max(img.width, img.height);
+  for (const size of [1200, 2000, 3000]) {
+    const s = Math.min(1, size / long);
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, c.width, c.height);
+    const hit = fn(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
+    if (hit && hit.data) return hit.data;
+    if (s === 1) break;
+  }
+  return '';
+}
+
+// Shade the fields the scanner was not sure about; the shade goes away once you edit or confirm the field.
+const CHECK_FIELDS = { name: 'aName', company: 'aCompany', title: 'aTitle', email: 'aEmail', phone: 'aPhone', website: 'aWebsite' };
+function markChecks(list) {
+  Object.entries(CHECK_FIELDS).forEach(([k, id]) => $(id).classList.toggle('check', list.includes(k) && !!$(id).value));
+  $('checkNote').hidden = !document.querySelector('#addFields .check');
+}
+Object.values(CHECK_FIELDS).forEach(id => $(id).addEventListener('input', () => {
+  $(id).classList.remove('check');
+  $('checkNote').hidden = !document.querySelector('#addFields .check');
+}));
+
+// Tap a recognised line, then the field it belongs in: fixes a wrong guess in two taps.
+const LINE_TARGETS = [['aName', 'Name'], ['aCompany', 'Company'], ['aTitle', 'Job title'], ['aEmail', 'Email'], ['aPhone', 'Phone'], ['aWebsite', 'Website'], ['myNotes', 'Notes']];
+let pickedLine = null;
+function renderScanLines(lines) {
+  const box = $('scanLines'); box.innerHTML = '';
+  pickedLine = null; $('lineTargets').hidden = true;
+  lines.forEach(t => {
+    const b = chip(t, false, '', () => {
+      box.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b && pickedLine !== t));
+      pickedLine = pickedLine === t ? null : t;
+      $('lineTargets').hidden = !pickedLine;
+    });
+    box.appendChild(b);
+  });
+}
+LINE_TARGETS.forEach(([id, label]) => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = '→ ' + label;
+  b.addEventListener('click', () => {
+    if (!pickedLine) return;
+    let v = pickedLine.replace(/^(tel|phone|mob|mobile|m|t|e|email|e-mail|w|web)[.:]*\s+/i, '');
+    if (id === 'aEmail') v = (v.match(/[^\s@]+@[^\s@]+\.[a-z]{2,}/i) || [v])[0];
+    if (id === 'aName') v = CardParse.nameCase(v);
+    if (id === 'myNotes') $(id).value = ($(id).value ? $(id).value + '\n' : '') + v;
+    else $(id).value = v;
+    $(id).classList.remove('check'); $('checkNote').hidden = !document.querySelector('#addFields .check');
+    $('lineTargets').hidden = true; pickedLine = null;
+    $('scanLines').querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+    toast(label + ' filled in');
+  });
+  $('lineTargetsBtns').appendChild(b);
+});
+
+$('scanInput').addEventListener('change', e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (file) scanFile(file);
+});
+async function scanFile(file) {
+  if (!current || !current.isNew) return;
+  const status = t => { $('scanStatus').textContent = t; };
+  const btn = $('scanBtn'); btn.classList.add('off'); btn.querySelector('span').textContent = 'Reading…';
+  const t0 = Date.now();
+  try {
+    const photo = await shrink(file);                       // also kept as a photo of the contact
+    let photoIdx = -1;
+    if (pendingPhotos.length < 6) { photoIdx = pendingPhotos.push(photo) - 1; renderPhotos(); }
+    const img = await loadImage(file);
+    const size = img.width + '×' + img.height + ' px' + (file.name === 'card.jpg' ? ', scan frame' : '');
+    let qr = '';
+    try { await loadScript('ocr/jsqr.min.js'); qr = qrFrom(img); } catch (err) { /* no QR reader: text only */ }
+    await loadScript('ocr/parse.js');
+    let lines = [];
+    if (!/BEGIN:VCARD|^MECARD:/i.test(qr)) {
+      status('Finding the card…');
+      const worker = await getOcr(status);
+      await loadScript('ocr/scan.js');
+      const res = await CardScan.read(worker, img, status);
+      // after reading: keep only the card itself, upright and small (the text was read from the full photo)
+      if (photoIdx >= 0 && pendingPhotos[photoIdx] === photo) {
+        try { pendingPhotos[photoIdx] = CardScan.photo(img, res.box, res.angle, 1200, 0.72); renderPhotos(); } catch (e) { /* keep the plain photo */ }
+      }
+      lines = res.lines;
+    }
+    URL.revokeObjectURL(img.src);
+    const r = CardParse.parse({ lines, qr });
+    const fill = (id, v) => { if (v) $(id).value = v; };
+    fill('aName', CardParse.nameCase(r.name || '')); fill('aEmail', r.email); fill('aPhone', r.phone); fill('aCompany', r.company);
+    fill('aTitle', r.title); fill('aWebsite', r.website);
+    markChecks(r.check || []);
+    if (r.profile && !$('myNotes').value.includes(r.profile)) $('myNotes').value = ($('myNotes').value ? $('myNotes').value + '\n' : '') + (/linkedin|lnkd/i.test(r.profile) ? 'LinkedIn: ' : 'Profile: ') + r.profile;
+    rememberScan(r.source === 'qr' ? 'qr' : 'ocr', r.check || [], Math.round((Date.now() - t0) / 1000));
+    $('aSource').value = 'badge';
+    const texts = r.source === 'qr'
+      ? qr.split(/\r?\n|;(?=[A-Z]+:)/).filter(l => l && !/^(BEGIN|END|VERSION|MECARD|N|PRODID|REV|UID)[:;]/i.test(l)).map(l => l.replace(/^[A-Z-]+(;[^:]*)?:/i, '').replace(/;+/g, ' ').trim()).filter(l => l && !/^(TEL|ADR|EMAIL|URL|ORG|TITLE|FN|NOTE|CELL|WORK|HOME|VOICE|FAX|PREF|INTERNET|TYPE|[ ,=])+$/i.test(l))
+      : lines.map(l => l.text.trim()).filter(Boolean).concat(/^https?:\/\//i.test(qr) ? [qr] : []);
+    $('scanQrLink').hidden = !/^https:\/\/\S+\.vcf(\?|$)/i.test(qr);
+    if (!$('scanQrLink').hidden) $('scanQrLink').href = qr;
+    renderScanLines(texts);
+    $('scanTextBox').hidden = !texts.length; $('scanTextBox').open = true;
+    const secs = Math.round((Date.now() - t0) / 1000);
+    status((r.name || r.email ? 'Done in ' + secs + ' s. Check the details. Wrong field? Tap a line below, then the field it belongs in.'
+      : 'No contact details recognised. Tap the lines below to fill in the fields, or try a sharper photo.') + ' (Photo ' + size + ')');
+  } catch (err) { status(err.message); }
+  btn.classList.remove('off'); btn.querySelector('span').textContent = 'Scan another card';
+}
+
+/* ---------- scan frame: the phone's camera with a card-shaped frame ---------- */
+// A straight, sharp photo of just the card reads much better. Without camera access (or when the
+// person prefers it) the normal camera app / photo picker is used.
+let camStream = null;
+// On by default (read best in the test on an iPhone); a too-small camera picture falls back to the camera app.
+const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && ls.get('camFrame', null) !== false;
+$('scanBtn').addEventListener('click', e => {
+  if (e.target === $('scanInput') || !camSupported()) return;      // let the file picker open
+  e.preventDefault();
+  openCamera();
+});
+async function openCamera() {
+  $('camView').hidden = false;
+  $('camHint').textContent = 'Starting the camera…'; $('camHint').className = '';
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } } });
+    $('camVideo').srcObject = camStream;
+    await $('camVideo').play().catch(() => {});
+    $('camHint').textContent = ($('camFrame').classList.contains('portrait') ? 'Fit the badge' : 'Fit the card') + ' inside the frame';
+  } catch (err) {
+    closeCamera();
+    toast('No camera access. Using the camera app instead.');
+    $('scanInput').click();
+  }
+}
+function closeCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; $('camVideo').srcObject = null;
+  $('camView').hidden = true;
+}
+// sharpness: strongest edges relative to the contrast (calibrated on real card photos: sharp ≈ 0.5–0.95, unreadable < 0.1)
+function sharpness(canvas) {
+  const w = 480, h = Math.max(2, Math.round(canvas.height * w / canvas.width));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(canvas, 0, 0, w, h);
+  const d = c.getContext('2d').getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+  const lap = [], sorted = Array.from(g).sort((a, b) => a - b);
+  const contrast = sorted[Math.floor(sorted.length * 0.95)] - sorted[Math.floor(sorted.length * 0.05)] + 1;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    lap.push(Math.abs(4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]));
+  }
+  lap.sort((a, b) => a - b);
+  return lap[Math.floor(lap.length * 0.99)] / contrast;
+}
+let blurWarned = false;
+$('camShot').addEventListener('click', () => {
+  const v = $('camVideo');
+  if (!camStream || !v.videoWidth) return;
+  // the part of the video under the frame (the video fills the screen, cropped like object-fit: cover)
+  const vr = v.getBoundingClientRect(), fr = $('camFrame').getBoundingClientRect();
+  const scale = Math.max(vr.width / v.videoWidth, vr.height / v.videoHeight);
+  const offX = (vr.width - v.videoWidth * scale) / 2, offY = (vr.height - v.videoHeight * scale) / 2;
+  const margin = 0.08;                                     // a little room: the reader finds the card edges itself
+  let x = (fr.left - vr.left - offX) / scale - fr.width / scale * margin, y = (fr.top - vr.top - offY) / scale - fr.height / scale * margin;
+  let w = fr.width / scale * (1 + 2 * margin), h = fr.height / scale * (1 + 2 * margin);
+  x = Math.max(0, x); y = Math.max(0, y); w = Math.min(v.videoWidth - x, w); h = Math.min(v.videoHeight - y, h);
+  const c = document.createElement('canvas'); c.width = Math.round(w); c.height = Math.round(h);
+  // too few pixels to read small print: use the camera app instead (sharper, full resolution)
+  if (Math.max(c.width, c.height) < 1100) {
+    closeCamera();
+    toast('The live camera gives too small a picture (' + c.width + '×' + c.height + '). Opening the camera app.');
+    $('scanInput').click();
+    return;
+  }
+  c.getContext('2d').drawImage(v, x, y, w, h, 0, 0, c.width, c.height);
+  if (sharpness(c) < 0.12 && !blurWarned) {
+    blurWarned = true;
+    $('camHint').textContent = 'The photo looks blurry. Hold steady and tap again.'; $('camHint').className = 'warn';
+    return;
+  }
+  blurWarned = false;
+  c.toBlob(blob => {
+    closeCamera();
+    if (blob) scanFile(new File([blob], 'card.jpg', { type: 'image/jpeg' }));
+  }, 'image/jpeg', 0.92);
+});
+$('camCancel').addEventListener('click', closeCamera);
+$('camTurn').addEventListener('click', () => {
+  $('camFrame').classList.toggle('portrait');
+  ls.set('camPortrait', $('camFrame').classList.contains('portrait'));
+  $('camHint').className = ''; $('camHint').textContent = ($('camFrame').classList.contains('portrait') ? 'Fit the badge' : 'Fit the card') + ' inside the frame';
+});
+if (ls.get('camPortrait', false)) $('camFrame').classList.add('portrait');
+$('camFile').addEventListener('click', () => { closeCamera(); $('scanInput').click(); });
+$('camFrameOn').addEventListener('change', e => ls.set('camFrame', e.target.checked));
+
+/* ---------- how well the scanner reads: learnt from the fields you correct ---------- */
+const ACC_FIELDS = [['name', 'Name'], ['company', 'Company'], ['title', 'Job title'], ['email', 'Email'], ['phone', 'Phone'], ['website', 'Website']];
+let scanBase = null;                     // what the scanner filled in, until the contact is saved
+function rememberScan(src, check, secs) {
+  const v = {};
+  ACC_FIELDS.forEach(([k]) => v[k] = $(CHECK_FIELDS[k]).value.trim());
+  scanBase = { src, check: check.slice(), v, secs };
+}
+function recordScan() {
+  if (!scanBase) return;
+  const st = ls.get('scanStats', null) || { since: todayStr(), scans: 0, qr: 0, secs: 0, fields: {} };
+  st.scans++;
+  if (scanBase.src === 'qr') st.qr++; else st.secs += scanBase.secs || 0;
+  if (scanBase.src !== 'qr') ACC_FIELDS.forEach(([k]) => {
+    const f = st.fields[k] = st.fields[k] || { read: 0, ok: 0, fixed: 0, missed: 0, shadedFixed: 0, shadedOk: 0 };
+    const was = scanBase.v[k], now = $(CHECK_FIELDS[k]).value.trim(), shaded = scanBase.check.includes(k);
+    if (was) {
+      f.read++;
+      if (was === now) { f.ok++; if (shaded) f.shadedOk++; }
+      else { f.fixed++; if (shaded) f.shadedFixed++; }
+    } else if (now) f.missed++;
+  });
+  ls.set('scanStats', st);
+  scanBase = null;
+}
+function accTotals(st) {
+  let fixes = 0, caught = 0, falseAlarms = 0;
+  ACC_FIELDS.forEach(([k]) => { const f = st.fields[k]; if (f) { fixes += f.fixed; caught += f.shadedFixed; falseAlarms += f.shadedOk; } });
+  return { fixes, caught, falseAlarms };
+}
+function accuracyText(st) {
+  const ocr = st.scans - st.qr, t = accTotals(st);
+  const lines = ['Card scanner since ' + st.since + ': ' + st.scans + ' scans (' + st.qr + ' via QR)' + (ocr ? ', ' + Math.round(st.secs / ocr) + ' s average' : '') + '.'];
+  ACC_FIELDS.forEach(([k, label]) => {
+    const f = st.fields[k]; if (!f) return;
+    lines.push(label + ': read ' + f.read + ', right ' + f.ok + ', corrected ' + f.fixed + ' (shaded ' + f.shadedFixed + '), shaded but right ' + f.shadedOk + ', missed ' + f.missed + '.');
+  });
+  lines.push('Shading: marked ' + t.caught + ' of ' + t.fixes + ' corrected fields; ' + t.falseAlarms + ' marked fields were already right.');
+  return lines.join('\n');
+}
+function renderAccuracy() {
+  const st = ls.get('scanStats', null), box = $('accBody');
+  $('accCopy').hidden = $('accReset').hidden = !st;
+  if (!st || !(st.scans - st.qr)) { box.innerHTML = '<p class="small muted" style="margin:0">No scanned cards saved yet.</p>'; return; }
+  const t = accTotals(st), ocr = st.scans - st.qr;
+  const rows = ACC_FIELDS.map(([k, label]) => {
+    const f = st.fields[k] || { read: 0, ok: 0, fixed: 0, missed: 0 };
+    return `<tr><td>${label}</td><td>${f.read ? pct(f.ok, f.read) : '–'}</td><td>${f.fixed}</td><td>${f.missed}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<p class="small" style="margin:0 0 6px">${st.scans} scans since ${esc(fmtDate(st.since))}${st.qr ? ' (' + st.qr + ' via QR)' : ''}, ${Math.round(st.secs / ocr)} s on average.</p>
+    <table class="rtab"><tr><th>Field</th><th>Read right</th><th>Corrected</th><th>Missed</th></tr>${rows}</table>
+    <p class="small muted" style="margin:8px 0 0">Yellow shading marked ${t.caught} of ${t.fixes} corrected fields. ${t.falseAlarms} shaded fields were already right.</p>`;
+}
+$('accCopy').addEventListener('click', async () => {
+  const st = ls.get('scanStats', null); if (!st) return;
+  try { await navigator.clipboard.writeText(accuracyText(st)); toast('Copied. Paste it in a message to whoever maintains the app.'); }
+  catch (e) { toast('Could not copy on this phone.'); }
+});
+$('accReset').addEventListener('click', () => { if (confirm('Reset the scanner statistics on this phone?')) { ls.del('scanStats'); renderAccuracy(); } });
+
+
+/* ---------- follow-up email and calendar ---------- */
+const DEFAULT_FU = {
+  subject: 'Good to meet you{atEvent}',
+  body: 'Dear {firstName},\n\nThank you for the good conversation{atEvent}. As promised, I am following up on what we discussed.\n\n\n\nPlease let me know if you have any questions.\n\nKind regards,\n\n{myName}\n{myTitle}\n{myCompany}\n{myPhone}\n{myCard}'
+};
+function fuTemplate() {
+  const p = (me && me.profile) || {};
+  return { subject: p.followUpSubject || DEFAULT_FU.subject, body: p.followUpBody || DEFAULT_FU.body };
+}
+function fillTemplate(text, c) {
+  const p = (me && me.profile) || {};
+  const ev = eventsOf(c)[0];
+  const first = clean(c.name).split(' ')[0] || '';
+  const vals = {
+    firstName: first, name: clean(c.name), company: clean(c.company), event: ev ? ev.name : '', atEvent: ev ? ' at ' + ev.name : '',
+    myName: [p.firstName, p.lastName].filter(Boolean).join(' '), myFirstName: p.firstName || '', myTitle: p.title || '', myCompany: p.company || '',
+    myPhone: p.phone || '', myEmail: p.email || '', myCard: me && me.slug ? new URL('../?u=' + encodeURIComponent(me.slug), location.href).href : ''
+  };
+  return text.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m))
+    .split('\n').filter((line, i, arr) => !(line.trim() === '' && /\{my\w+\}/.test((text.split('\n')[i] || '')))).join('\n')   // drop empty signature lines
+    .replace(/\n{4,}/g, '\n\n\n');
+}
+/* ---------- save to the phone's contacts (vCard) ---------- */
+// Name, organisation, job title, phone, email, website and where you met. Your notes stay out:
+// the phone's address book often syncs to other services.
+function vcard(c) {
+  const v = x => String(x || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+  const name = clean(c.name).trim();
+  // "Cdr. Kees van der Berg" -> prefix "Cdr.", first "Kees", last "van der Berg"
+  const words = name.split(/\s+/), pre = [];
+  while (words.length > 1 && HONORIFICS.has(words[0].toLowerCase().replace(/\./g, ''))) pre.push(words.shift());
+  let cut = words.length > 1 ? words.length - 1 : words.length;
+  const particle = words.findIndex((w, i) => i > 0 && i < words.length - 1 && /^(van|von|de|der|den|du|da|di|del|della|le|la|ten|ter|te|op|in|'t|het|mc)$/i.test(w));
+  if (particle > 0) cut = particle;
+  const first = words.slice(0, cut).join(' '), last = words.slice(cut).join(' ');
+  const org = companyOf(c), phone = clean(c.phone).trim(), email = clean(c.email).trim(), web = webUrl(c.website);
+  const ev = eventsOf(c)[0];
+  const met = 'Met ' + (ev ? 'at ' + ev.name + ', ' : '') + new Date(c.time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0', 'N:' + v(last) + ';' + v(first) + ';;' + v(pre.join(' ')) + ';', 'FN:' + v(name)];
+  if (org && !org.guess) lines.push('ORG:' + v(org.text));
+  if (c.title) lines.push('TITLE:' + v(clean(c.title)));
+  if (phone) lines.push('TEL;TYPE=CELL:' + phone.replace(/[^\d+ ()-]/g, ''));
+  if (email) lines.push('EMAIL;TYPE=INTERNET:' + email);
+  if (web) lines.push('URL:' + web);
+  lines.push('NOTE:' + v(met));
+  lines.push('END:VCARD');
+  return lines.join('\r\n') + '\r\n';
+}
+async function saveVcard(c) {
+  const name = (clean(c.name).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'contact') + '.vcf';
+  const file = new File([vcard(c)], name, { type: 'text/vcard' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  // without a share menu: open the card, the phone offers "Add to contacts"
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+function followUpMailto(c) {
+  const t = fuTemplate();
+  return 'mailto:' + encodeURIComponent(clean(c.email)) + '?subject=' + encodeURIComponent(fillTemplate(t.subject, c)) + '&body=' + encodeURIComponent(fillTemplate(t.body, c).replace(/\n/g, '\r\n'));
+}
+function fillFuForm() { const t = fuTemplate(); $('fuSubject').value = t.subject; $('fuBody').value = t.body; }
+$('fuReset').addEventListener('click', () => { $('fuSubject').value = DEFAULT_FU.subject; $('fuBody').value = DEFAULT_FU.body; });
+$('fuSave').addEventListener('click', async e => {
+  const btn = e.target; btn.disabled = true;
+  try {
+    const subject = $('fuSubject').value.trim(), body = $('fuBody').value.trim();
+    await api('saveFollowUpTemplate', { subject: subject === DEFAULT_FU.subject ? '' : subject, body: body === DEFAULT_FU.body.trim() ? '' : body });
+    me = me || { profile: {} }; me.profile.followUpSubject = subject === DEFAULT_FU.subject ? '' : subject; me.profile.followUpBody = body === DEFAULT_FU.body.trim() ? '' : body;
+    ls.set('ownerMe', me);
+    toast('Follow-up text saved');
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+  btn.disabled = false;
+});
+
+function calInfo() {
+  const c = current || {};
+  const d = form.followUp;
+  const who = clean(c.name) + (clean(c.company) ? ' (' + clean(c.company) + ')' : '');
+  const lines = [clean(c.title), clean(c.company), clean(c.email), clean(c.phone), '', $('myNotes').value.trim(),
+    c.id && !c.isNew ? '\nOpen in the app: ' + new URL('#c=' + encodeURIComponent(c.id), location.href).href : ''].filter((x, i) => x || i === 4);
+  return { title: 'Follow up: ' + (who || 'contact'), details: lines.join('\n').trim(), date: d.replace(/-/g, '') };
+}
+function icsEscape(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+$('calIcs').addEventListener('click', async () => {
+  const i = calInfo();
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//NFC card//Follow-up//EN', 'BEGIN:VEVENT',
+    'UID:' + (current.id || uuid()) + '-followup@nfc-card', 'DTSTAMP:' + stamp,
+    'DTSTART:' + i.date + 'T090000', 'DTEND:' + i.date + 'T091500',
+    'SUMMARY:' + icsEscape(i.title), 'DESCRIPTION:' + icsEscape(i.details),
+    'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(i.title), 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const name = 'follow-up-' + fold(clean(current.name) || 'contact').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.ics';
+  const file = new File([ics], name, { type: 'text/calendar' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: i.title }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+$('calGoogle').addEventListener('click', () => {
+  const i = calInfo();
+  const next = new Date(form.followUp + 'T12:00:00'); next.setDate(next.getDate() + 1);
+  const end = next.toLocaleDateString('sv-SE').replace(/-/g, '');
+  window.open('https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(i.title) +
+    '&dates=' + i.date + 'T090000/' + i.date + 'T091500&details=' + encodeURIComponent(i.details), '_blank', 'noopener');
+});
+$('calOutlook').addEventListener('click', () => {
+  const i = calInfo();
+  window.open('https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent&subject=' + encodeURIComponent(i.title) +
+    '&startdt=' + form.followUp + 'T09:00:00&enddt=' + form.followUp + 'T09:15:00&body=' + encodeURIComponent(i.details), '_blank', 'noopener');
+});
+
+let viewerDelete = null;
+function openViewer(url, onDelete) { $('viewerImg').src = url; viewerDelete = onDelete; $('viewer').hidden = false; }
+function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); viewerDelete = null; }
+$('viewerClose').addEventListener('click', closeViewer);
+$('viewerDelete').addEventListener('click', () => { const fn = viewerDelete; if (!fn || !confirm('Delete this photo?')) return; closeViewer(); fn(); });
+window.addEventListener('hashchange', closeViewer);
+
+async function deletePhoto(contactId, pid) {
+  if (!navigator.onLine) { toast('Deleting photos needs an internet connection.'); return; }
+  try {
+    const c = await api('removePhoto', { id: contactId, photo: pid });
+    photoMem.delete(pid); idbSet('photo:' + pid, null);
+    replaceContact(c); toast('Photo deleted');
+  } catch (err) { toast(err.message); }
+  if (current && current.id === contactId) renderPhotos();
+}
+
+$('deleteBtn').addEventListener('click', async () => {
+  if (!current || current.isNew) return;
+  if (!confirm('Delete ' + clean(current.name) + '? This also removes the row from your sheet' + ((current.photos || []).length ? ' and the photos' : '') + ', and cannot be undone.')) return;
+  const id = current.id;
+  contacts = contacts.filter(c => c.id !== id);
+  ls.set('ownerRecent', contacts);
+  enqueue({ action: 'deleteContact', data: { id } });
+  photoQueue = photoQueue.filter(p => p.contactId !== id); savePhotoQueue();
+  location.hash = '';
+  await flushQueue();
+  toast(queue().some(o => o.action === 'deleteContact' && o.data.id === id) ? 'Deleted on this phone. Will sync when online.' : 'Contact deleted');
+});
+
+/* ---------- export (CSV for Excel / Google Sheets / CRM import) ---------- */
+$('exportBtn').addEventListener('click', async () => {
+  const rows = visibleContacts();
+  if (!rows.length) return;
+  const cell = v => { let t = String(v == null ? '' : v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[";]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const sets = allSets();
+  const head = ['Date', 'Time', 'Name', 'Company', 'Job title', 'Email', 'Phone', 'Website', 'Event', 'Lead', TYPE_SET].concat(sets.map(g => g.name))
+    .concat(['Other tags', 'Next follow-up', 'Open follow-ups', 'My notes', 'Their note', 'Card ID', 'Source', 'Photos', 'Collected by']);
+  const lines = [head].concat(rows.map(c => {
+    const d = new Date(c.time), tags = new Set(c.tags || []);
+    const known = new Set(TEMPS.concat([...tags].filter(t => t.startsWith(TYPE_PREFIX))));
+    const answers = sets.map(g => g.options.filter(o => pickOn(g, o, tags)).map(o => { known.add(pickTag(g, o)); known.add(o); return o; }).join(', '));
+    return [localDate(c.time), isNaN(d) ? '' : d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }), clean(c.name), clean(c.company), clean(c.title), clean(c.email), clean(c.phone), clean(c.website),
+      eventsOf(c).map(e => e.name).join(', '), [...tags].filter(t => TEMPS.includes(t)).join(', '), typeOf(c)].concat(answers)
+      .concat([[...tags].filter(t => !known.has(t)).map(tagLabel).join(', '),
+      c.followUp || '', tasksOf(c).filter(t => !t.done).map(t => (t.due ? t.due + ' ' : '') + t.text).join(' | '), clean(c.myNotes), clean(c.note), c.cardId || '', srcLabel(c.source || ''), (c.photos || []).length || '', c.ownerName || 'Me']);
+  })).map(r => r.map(cell).join(';'));
+  // semicolons + BOM so Excel with Dutch/European settings opens it in columns, with accents intact
+  const csv = '\ufeff' + lines.join('\r\n');
+  const ev = events.find(e => e.id === filter);
+  const label = ev ? ev.name : filter === 'followup' ? 'follow-up' : filter === 'mine' ? 'mine' : 'all';
+  const name = 'contacts-' + fold(label).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + todayStr() + '.csv';
+  const file = new File([csv], name, { type: 'text/csv' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Exported ' + rows.length + (rows.length === 1 ? ' contact' : ' contacts'));
+});
+
+/* ---------- card statistics: card opened -> details shared ---------- */
+let myViews = ls.get('ownerViews', null);          // { 'YYYY-MM-DD': n }, from the server
+async function loadViews() {
+  if (!navigator.onLine) return myViews;
+  try { const r = await api('cardStats'); if (r && r.views) { myViews = r.views; ls.set('ownerViews', myViews); } } catch (e) { /* older backend */ }
+  return myViews;
+}
+const sumRange = (m, from, to) => Object.entries(m || {}).reduce((n, [d, v]) => n + (d >= from && d <= to ? v : 0), 0);
+const sharedIn = (list, from, to) => list.filter(c => c.source === 'card' && localDate(c.time) >= from && localDate(c.time) <= to).length;
+const pct = (a, b) => b ? Math.min(100, Math.round(a / b * 100)) + '%' : '–';
+async function renderStats() {
+  const box = $('statsBody');
+  const views = await loadViews();
+  if (!views) { box.innerHTML = '<p class="small muted" style="margin:0">Statistics appear once the card page has been opened (needs the latest Core).</p>'; return; }
+  const mine = contacts.filter(c => !c.ownerName);
+  const rows = [['Last 7 days', todayStr(-6), todayStr()], ['Last 30 days', todayStr(-29), todayStr()]]
+    .concat(events.slice(0, 5).map(e => [e.name, e.start, e.end]));
+  box.innerHTML = '<table class="rtab"><tr><th></th><th>Opened</th><th>Shared</th><th>%</th></tr>' + rows.map(([l, f, t]) => {
+    const v = sumRange(views, f, t), sh = sharedIn(mine, f, t);
+    return `<tr><td>${esc(l)}</td><td>${v}</td><td>${sh}</td><td>${pct(sh, v)}</td></tr>`;
+  }).join('') + '</table><p class="small muted" style="margin:8px 0 0">Counting started with version 2.16.</p>';
+}
+
+/* ---------- event report (beursverslag): built on the phone, shared as PDF or email ---------- */
+let rep = null;                       // { ev, scope, variant, type, data, r }
+let pdfReady = null, pdfFonts = null;
+function loadPdfLib() {
+  if (!pdfReady) pdfReady = (async () => {
+    await loadScript('report/jspdf.umd.min.js');
+    await loadScript('report/jspdf.plugin.autotable.min.js');
+    const font = async f => {
+      const b = new Uint8Array(await (await fetch('report/' + f)).arrayBuffer());
+      let str = ''; for (let i = 0; i < b.length; i += 8192) str += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+      return btoa(str);
+    };
+    pdfFonts = { reg: await font('DejaVuSans.ttf'), bold: await font('DejaVuSans-Bold.ttf') };   // accents such as ć, ł, ø
+  })().catch(e => { pdfReady = null; throw e; });
+  return pdfReady;
+}
+const inEvent = (c, ev) => { const d = localDate(c.time); return d && d >= ev.start && d <= ev.end; };
+const leadOf = c => TEMPS.find(t => (c.tags || []).includes(t)) || '';
+const orgOf = c => { const co = companyOf(c); return co ? co.text : ''; };
+const metAgain = c => (clean(c.myNotes).match(/^— .* —$/gm) || []).length >= 2;
+// the notes of this event only (a contact met at several shows has one section per conversation)
+function notesFor(c, ev) {
+  const n = clean(c.myNotes).trim();
+  if (!/^— .* —$/m.test(n)) return n;
+  const parts = n.split(/^(?=— .* —$)/m).map(p => p.trim()).filter(Boolean);
+  const mine = parts.filter(p => (/^— (.*) —$/m.exec(p) || [])[1] && /^— (.*) —$/m.exec(p)[1].includes(ev.name));
+  return (mine.length ? mine : parts).join('\n\n');
+}
+const countLine = obj => Object.entries(obj).map(([k, v]) => k + ' ' + v).join(' · ');
+
+function openReport(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) { location.hash = ''; return; }
+  if (!rep || rep.ev.id !== id) rep = { ev, scope: 'mine', variant: 'full', type: '' };
+  rep.ev = ev;
+  $('rTitle').textContent = ev.name;
+  show('vReport');
+  loadPdfLib().catch(() => {});        // ready before the Share button is tapped (iPhone needs that)
+  loadReport();
+}
+async function loadReport() {
+  renderReportControls();
+  rep.data = null; rep.r = null;
+  if (rep.scope === 'team') {
+    $('rBody').innerHTML = '<p class="muted small">Loading the team report…</p>';
+    if (!navigator.onLine) { $('rBody').innerHTML = '<div class="empty">The team report needs a connection.</div>'; return; }
+    try { rep.data = await api('eventReport', { id: rep.ev.id, scope: 'team' }); }
+    catch (e) { $('rBody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  } else {
+    // your own contacts are on this phone already (also offline, including changes not synced yet)
+    rep.data = { event: rep.ev, scope: 'mine', people: [], contacts: contacts.filter(c => !c.ownerName), views: await loadViews() };
+  }
+  renderReport();
+}
+function renderReportControls() {
+  const ev = rep.ev;
+  const team = canTeamReport(ev) && people.length > 1;
+  $('rScopeRow').hidden = !team;
+  const sc = $('rScope'); sc.innerHTML = '';
+  [['mine', 'My contacts'], ['team', 'Whole team']].forEach(([v, l]) => sc.appendChild(chip(l, rep.scope === v, '', () => { if (rep.scope !== v) { rep.scope = v; loadReport(); } })));
+  const va = $('rVariant'); va.innerHTML = '';
+  [['full', 'Full'], ['summary', 'Summary (no names or notes)']].forEach(([v, l]) => va.appendChild(chip(l, rep.variant === v, '', () => { rep.variant = v; renderReportControls(); renderReport(); })));
+  const types = reportTypes();
+  $('rTypeRow').hidden = !types.length;
+  const ty = $('rType'); ty.innerHTML = '';
+  [['', 'All']].concat(types.map(t => [t, t]), types.length ? [['-', 'No type']] : []).forEach(([v, l]) => ty.appendChild(chip(l, rep.type === v, '', () => { rep.type = v; renderReportControls(); renderReport(); })));
+}
+function reportTypes() {
+  const ev = (rep.data && rep.data.event) || rep.ev;
+  const out = (ev.types || []).slice();
+  ((rep.data && rep.data.contacts) || []).filter(c => inEvent(c, ev)).forEach(c => { const t = typeOf(c); if (t && !out.includes(t)) out.push(t); });
+  return out;
+}
+
+function buildReport() {
+  const ev = rep.data.event || rep.ev, team = rep.data.scope === 'team', full = rep.variant === 'full';
+  const all = rep.data.contacts.filter(c => inEvent(c, ev));
+  const list = all.filter(c => !rep.type || (rep.type === '-' ? !typeOf(c) : typeOf(c) === rep.type))
+    .sort((x, y) => (x.time < y.time ? -1 : 1));
+  const by = (fn) => { const o = {}; list.forEach(c => { const k = fn(c); if (k) o[k] = (o[k] || 0) + 1; }); return o; };
+  const myName = (me && me.name) || 'Me';
+  const tasks = []; list.forEach(c => tasksOf(c).forEach(t => tasks.push({ t, c })));
+  const today = todayStr();
+  const open = tasks.filter(x => !x.t.done).sort((a, b) => ((a.t.due || '9999') < (b.t.due || '9999') ? -1 : 1));
+  const again = list.filter(metAgain).length;
+  const typeLabel = rep.type === '-' ? 'No organisation type' : rep.type ? rep.type + ' only' : '';
+  const figures = [
+    ['Contacts', String(list.length) + (rep.type ? ' (of ' + all.length + ' at this event)' : '')],
+    ['New / met more than once', (list.length - again) + ' / ' + again],
+    ['How collected', countLine(by(c => c.source === 'card' ? 'NFC card' : srcLabel(c.source || 'manual')))],
+    ['Per day', countLine(Object.fromEntries(Object.entries(by(c => localDate(c.time))).sort().map(([d, n]) => [new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), n])))]
+  ];
+  if (team) figures.push(['Per person', countLine(by(c => c.ownerName || myName))]);
+  if (rep.data.views && !rep.type) {
+    const v = sumRange(rep.data.views, ev.start, ev.end), sh = sharedIn(all, ev.start, ev.end);
+    if (v || sh) figures.push(['Card opened → details shared', v + ' → ' + sh + ' (' + pct(sh, v) + ')']);
+  }
+  figures.push(['Follow-ups', open.length + ' open' + (open.filter(x => x.t.due && x.t.due < today).length ? ' (' + open.filter(x => x.t.due && x.t.due < today).length + ' overdue)' : '') + ' · ' + tasks.filter(x => x.t.done).length + ' done']);
+  const leads = TEMPS.concat(['']).map(t => [t || 'No lead', list.filter(c => leadOf(c) === t).length]).filter(([l, n]) => n || l !== 'No lead');
+  const tnames = reportTypes().filter(t => !rep.type || rep.type === t);
+  const types = tnames.map(t => {
+    const cs = list.filter(c => typeOf(c) === t);
+    return [t, cs.length, [...new Set(cs.map(orgOf).filter(Boolean))].sort().join(', ')];
+  });
+  const untyped = list.filter(c => !typeOf(c));
+  if ((tnames.length && !rep.type) || rep.type === '-') if (untyped.length) types.push(['No type', untyped.length, [...new Set(untyped.map(orgOf).filter(Boolean))].sort().join(', ')]);
+  const who = c => c.ownerName || myName;
+  return {
+    ev, team, full, list,
+    title: ev.name,
+    subtitle: 'Event report · ' + fmtRange(ev),
+    meta: [team ? 'Whole team' : 'My contacts' + (me && me.name ? ' (' + me.name + ')' : ''), full ? 'Full' : 'Summary', typeLabel, 'made ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })].filter(Boolean).join(' · '),
+    figures, leads, types: tnames.length || rep.type ? types : [],
+    hot: list.filter(c => leadOf(c) === 'Hot').map(c => [clean(c.name), orgOf(c), typeOf(c)].concat(team ? [who(c)] : [])),
+    open: open.map(x => [x.t.due ? fmtDate(x.t.due) : 'No date', x.t.text, clean(x.c.name) + (orgOf(x.c) ? ', ' + orgOf(x.c) : '')].concat(team ? [who(x.c)] : [])),
+    contacts: list.map(c => ({
+      name: clean(c.name), title: clean(c.title), org: orgOf(c), email: clean(c.email), phone: clean(c.phone),
+      type: typeOf(c), lead: leadOf(c), again: metAgain(c), by: team ? who(c) : '',
+      notes: notesFor(c, ev), note: clean(c.note),
+      tags: (c.tags || []).filter(t => !TEMPS.includes(t) && !t.startsWith(TYPE_PREFIX)).map(tagLabel).join(', '),
+      open: tasksOf(c).filter(t => !t.done).map(t => (t.due ? fmtDate(t.due) + ': ' : '') + t.text)
+    }))
+  };
+}
+
+function renderReport() {
+  const r = rep.r = buildReport();
+  const rows = (head, body) => `<table class="rtab">${head ? '<tr>' + head.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>' : ''}${body.map(b => '<tr>' + b.map(v => `<td>${esc(v)}</td>`).join('') + '</tr>').join('')}</table>`;
+  let h = `<div class="rsec"><div class="muted small">${esc(r.subtitle)}</div><div class="small" style="margin-top:2px">${esc(r.meta)}</div></div>`;
+  if (!r.list.length) { $('rBody').innerHTML = h + '<div class="empty">No contacts in this selection.</div>'; return; }
+  h += `<div class="rsec"><h2>Key figures</h2>${rows(null, r.figures)}</div>`;
+  h += `<div class="rsec"><h2>Leads</h2><div class="rgrid">${r.leads.map(([l, n]) => `<div class="rnum"><b>${n}</b>${esc(l)}</div>`).join('')}</div>`
+    + (r.full && r.hot.length ? `<div style="margin-top:12px">${rows(['Hot', 'Organisation', 'Type'].concat(r.team ? ['By'] : []), r.hot)}</div>` : '') + '</div>';
+  if (r.types.length) h += `<div class="rsec"><h2>Organisation types</h2>${rows(['Type', 'Contacts', 'Organisations'], r.types)}</div>`;
+  h += `<div class="rsec"><h2>Open follow-ups</h2>${!r.open.length ? '<p class="small muted" style="margin:0">None.</p>' : r.full ? rows(['Due', 'Action', 'Contact'].concat(r.team ? ['By'] : []), r.open) : `<p class="small" style="margin:0">${r.open.length} open. Names are left out of the summary.</p>`}</div>`;
+  if (r.full) {
+    h += `<div class="rsec"><h2>Contacts (${r.contacts.length})</h2>` + r.contacts.map(c => `<div class="rc">
+      <b>${esc(c.name)}</b>${c.again ? ' <span class="badge">met more than once</span>' : ''}
+      <div class="small">${esc([c.title, c.org].filter(Boolean).join(' · '))}</div>
+      <div class="small muted">${esc([c.email, c.phone, c.type, c.lead, c.by ? 'by ' + c.by : ''].filter(Boolean).join(' · '))}</div>
+      ${c.tags ? `<div class="small muted">${esc(c.tags)}</div>` : ''}
+      ${c.notes ? `<div class="notes">${esc(c.notes)}</div>` : ''}
+      ${c.note ? `<div class="notes muted">Their note: ${esc(c.note)}</div>` : ''}
+      ${c.open.length ? `<div class="small" style="margin-top:4px">Follow-up: ${esc(c.open.join(' · '))}</div>` : ''}
+    </div>`).join('') + '</div>';
+  }
+  $('rBody').innerHTML = h;
+}
+
+function reportText(r) {
+  const L = ['EVENT REPORT: ' + r.title, r.subtitle.replace('Event report · ', ''), r.meta, '', 'KEY FIGURES'];
+  r.figures.forEach(([k, v]) => L.push(k + ': ' + v));
+  L.push('', 'LEADS', r.leads.map(([l, n]) => l + ' ' + n).join(' · '));
+  if (r.full && r.hot.length) r.hot.forEach(x => L.push('- Hot: ' + x.filter(Boolean).join(', ')));
+  if (r.types.length) { L.push('', 'ORGANISATION TYPES'); r.types.forEach(([t, n, o]) => L.push(t + ' (' + n + ')' + (o ? ': ' + o : ''))); }
+  L.push('', 'OPEN FOLLOW-UPS');
+  if (!r.open.length) L.push('None.'); else if (r.full) r.open.forEach(x => L.push('- ' + x[0] + ': ' + x[1] + ' – ' + x.slice(2).join(', '))); else L.push(r.open.length + ' open.');
+  if (r.full) {
+    L.push('', 'CONTACTS');
+    r.contacts.forEach(c => {
+      L.push('', c.name + (c.title || c.org ? ' – ' + [c.title, c.org].filter(Boolean).join(', ') : ''));
+      const sub = [c.email, c.phone, c.type, c.lead, c.by ? 'by ' + c.by : '', c.again ? 'met more than once' : ''].filter(Boolean).join(' · ');
+      if (sub) L.push(sub);
+      if (c.tags) L.push(c.tags);
+      if (c.notes) L.push(c.notes);
+      if (c.note) L.push('Their note: ' + c.note);
+      if (c.open.length) L.push('Follow-up: ' + c.open.join(' · '));
+    });
+  }
+  return L.join('\n');
+}
+
+function makePdf(r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  doc.addFileToVFS('DejaVu.ttf', pdfFonts.reg); doc.addFont('DejaVu.ttf', 'DejaVu', 'normal');
+  doc.addFileToVFS('DejaVuB.ttf', pdfFonts.bold); doc.addFont('DejaVuB.ttf', 'DejaVu', 'bold');
+  const M = 14, P = [10, 61, 98];
+  let y = 20;
+  doc.setFont('DejaVu', 'bold'); doc.setFontSize(18); doc.text(r.title, M, y); y += 7;
+  doc.setFont('DejaVu', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text(r.subtitle, M, y); y += 5; doc.text(doc.splitTextToSize(r.meta, 182), M, y); y += 9; doc.setTextColor(0);
+  const head = t => { if (y > 255) { doc.addPage(); y = 20; } doc.setFont('DejaVu', 'bold'); doc.setFontSize(12); doc.setTextColor(...P); doc.text(t, M, y); doc.setTextColor(0); y += 3; };
+  const table = o => { doc.autoTable(Object.assign({ startY: y, margin: { left: M, right: M, bottom: 18 }, theme: 'grid',
+    styles: { font: 'DejaVu', fontSize: 9, cellPadding: 1.8, lineColor: [225, 228, 232], lineWidth: 0.2, valign: 'top' },
+    headStyles: { font: 'DejaVu', fontStyle: 'bold', fillColor: P, textColor: 255 } }, o)); y = doc.lastAutoTable.finalY + 9; };
+  head('Key figures'); table({ body: r.figures, columnStyles: { 0: { cellWidth: 55, fontStyle: 'bold' } } });
+  head('Leads'); table({ head: [['Lead', 'Contacts']], body: r.leads.map(x => x.map(String)), columnStyles: { 1: { cellWidth: 30 } } });
+  if (r.full && r.hot.length) { head('Hot leads'); table({ head: [['Name', 'Organisation', 'Type'].concat(r.team ? ['By'] : [])], body: r.hot }); }
+  if (r.types.length) { head('Organisation types'); table({ head: [['Type', 'Contacts', 'Organisations']], body: r.types.map(x => x.map(String)), columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 22 } } }); }
+  head('Open follow-ups');
+  if (!r.open.length) table({ body: [['None.']] });
+  else if (r.full) table({ head: [['Due', 'Action', 'Contact'].concat(r.team ? ['By'] : [])], body: r.open, columnStyles: { 0: { cellWidth: 28 } } });
+  else table({ body: [[r.open.length + ' open. Names are left out of the summary.']] });
+  if (r.full && r.contacts.length) {
+    head('Contacts (' + r.contacts.length + ')');
+    table({ head: [['Contact', 'Type / lead', 'Notes and follow-ups']],
+      body: r.contacts.map(c => [
+        [c.name, c.title, c.org, c.email, c.phone, c.by ? 'By ' + c.by : ''].filter(Boolean).join('\n'),
+        [c.type, c.lead, c.again ? 'Met more than once' : '', c.tags].filter(Boolean).join('\n'),
+        [c.notes, c.note ? 'Their note: ' + c.note : '', c.open.length ? 'Follow-up: ' + c.open.join('; ') : ''].filter(Boolean).join('\n\n')
+      ]),
+      columnStyles: { 0: { cellWidth: 52 }, 1: { cellWidth: 32 } } });
+  }
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFont('DejaVu', 'normal'); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(r.title + (r.full ? ' · contains personal data, handle confidentially' : ''), M, 289);
+    doc.text(i + ' / ' + pages, 196, 289, { align: 'right' });
+  }
+  return doc.output('blob');
+}
+const reportFileName = r => 'Report ' + r.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() + (r.full ? '' : ' (summary)') + '.pdf';
+
+$('rPdf').addEventListener('click', async () => {
+  if (!rep || !rep.r || !rep.r.list.length) return toast('No contacts in this selection.');
+  if (!pdfFonts) {
+    toast('Preparing the PDF…');
+    try { await loadPdfLib(); } catch (e) { return toast('The PDF maker could not be loaded. Check your connection and try again.'); }
+  }
+  let file;
+  try { file = new File([makePdf(rep.r)], reportFileName(rep.r), { type: 'application/pdf' }); }
+  catch (e) { return toast('The PDF could not be made: ' + e.message); }
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: file.name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+});
+$('rMail').addEventListener('click', () => {
+  if (!rep || !rep.r || !rep.r.list.length) return toast('No contacts in this selection.');
+  const MAX = 6000;                    // mail apps cut very long links
+  let body = reportText(rep.r);
+  if (body.length > MAX) body = body.slice(0, MAX).replace(/\n[^\n]*$/, '') + '\n\n… shortened. Use Share PDF for the complete report.';
+  location.href = 'mailto:?subject=' + encodeURIComponent('Event report: ' + rep.r.title + (rep.r.full ? '' : ' (summary)')) + '&body=' + encodeURIComponent(body);
+});
+$('backBtn3').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = ''));
+$('reportBtn').addEventListener('click', () => { location.hash = 'report=' + encodeURIComponent(filter); });
+
+/* ---------- events (settings) ---------- */
+let editingEvent = null, evTeamSel = new Set();
+const canManage = e => !e.lead || !!(me && (e.lead === me.id || me.role === 'admin'));
+const canTeamReport = e => !!(me && (e.lead === me.id || me.role === 'admin'));
+function renderEvents() {
+  const box = $('evList');
+  box.innerHTML = events.length ? '' : '<p class="small muted" style="margin:4px 0">No events yet.</p>';
+  events.forEach(e => {
+    const n = contacts.filter(c => eventsOf(c).some(x => x.id === e.id)).length;
+    const row = document.createElement('div'); row.className = 'evrow';
+    const extra = [e.leadName && people.length > 1 ? 'lead ' + e.leadName : '', (e.types || []).join(' / ')].filter(Boolean).join(' · ');
+    row.innerHTML = `<div class="info"><b>${esc(e.name)}</b><span class="count">${esc(fmtRange(e))} · ${n} contact${n === 1 ? '' : 's'}</span>${extra ? `<span class="count" style="display:block">${esc(extra)}</span>` : ''}</div>`;
+    const rp = document.createElement('button'); rp.className = 'iconbtn'; rp.type = 'button'; rp.textContent = 'Report';
+    rp.addEventListener('click', () => { location.hash = 'report=' + encodeURIComponent(e.id); });
+    row.appendChild(rp);
+    if (canManage(e)) {
+      const ed = document.createElement('button'); ed.className = 'iconbtn'; ed.type = 'button'; ed.textContent = 'Edit';
+      ed.addEventListener('click', () => editEvent(e));
+      const del = document.createElement('button'); del.className = 'iconbtn danger'; del.type = 'button'; del.textContent = 'Delete';
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete the event "' + e.name + '"? The contacts stay.')) return;
+        try { await api('deleteEvent', { id: e.id }); events = events.filter(x => x.id !== e.id); ls.set('ownerEvents', events); renderEvents(); toast('Event deleted'); }
+        catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+      });
+      row.append(ed, del);
+    }
+    box.appendChild(row);
+  });
+}
+function renderEvTeam() {
+  const box = $('evTeam'); box.innerHTML = '';
+  people.forEach(p => box.appendChild(chip(p.name, evTeamSel.has(p.id), '', () => {
+    if (p.id === $('evLead').value) return toast('The lead is always on the team.');
+    evTeamSel.has(p.id) ? evTeamSel.delete(p.id) : evTeamSel.add(p.id); renderEvTeam();
+  })));
+}
+function editEvent(e) {
+  editingEvent = e || null;
+  $('evFormTitle').textContent = e ? 'Edit event' : 'New event';
+  $('evName').value = e ? e.name : '';
+  $('evStart').value = e ? e.start : '';
+  $('evEnd').value = e ? e.end : '';
+  $('evCancel').hidden = !e;
+  const latest = events.find(x => (x.types || []).length);
+  $('evTypes').value = ((e ? e.types : latest && latest.types) || []).join(', ');
+  // lead and team: only when there is a team
+  const team = people.length > 1 && me;
+  $('evLeadRow').hidden = !team;
+  if (team) {
+    const lead = e ? e.lead || '' : me.id;
+    $('evLead').innerHTML = (e && !e.lead ? '<option value="">No lead</option>' : '') + people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    $('evLead').value = lead;
+    $('evLead').disabled = !!(e && e.lead && !canManage(e));
+    evTeamSel = new Set(e ? (e.members || []) : [me.id]);
+    if (lead) evTeamSel.add(lead);
+    renderEvTeam();
+  }
+  if (e) $('evName').focus();
+}
+$('evLead').addEventListener('change', () => { if ($('evLead').value) evTeamSel.add($('evLead').value); renderEvTeam(); });
+$('evStart').addEventListener('change', () => { if (!$('evEnd').value || $('evEnd').value < $('evStart').value) $('evEnd').value = $('evStart').value; });
+$('evCancel').addEventListener('click', () => editEvent(null));
+$('evForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('evSave'); btn.disabled = true;
+  try {
+    const data = { id: editingEvent ? editingEvent.id : '', name: $('evName').value.trim(), start: $('evStart').value, end: $('evEnd').value,
+      types: $('evTypes').value.split(/[,;\n]/).map(x => x.trim()).filter(Boolean) };
+    if (!$('evLeadRow').hidden) { data.lead = $('evLead').value; data.members = [...evTeamSel]; }
+    const saved = await api('saveEvent', data);
+    events = events.filter(x => x.id !== saved.id).concat(saved).sort((x, y) => (y.start > x.start ? 1 : y.start < x.start ? -1 : 0));
+    ls.set('ownerEvents', events);
+    toast(editingEvent ? 'Event updated' : 'Event saved');
+    editEvent(null); renderEvents();
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); }
+  btn.disabled = false;
+});
+
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const deviceName = () => (isIOS ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'Browser') + ' · ' + new Date().toLocaleDateString();
+
+const b64ToBytes = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); s += '==='.slice((s.length + 3) % 4); return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+const bytesToB64url = b => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+async function pushState() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    return { supported: false };
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  return { supported: true, reg, sub, permission: Notification.permission };
+}
+
+/* ---------- quick picks editor (settings) ---------- */
+let editingPick = null;     // { scope, id }
+let pickEventSel = new Set();
+function renderPickList() {
+  const box = $('pickList'); box.innerHTML = '';
+  const isAdmin = me && me.role === 'admin';
+  allSets().forEach(g => {
+    const row = document.createElement('div'); row.className = 'pickrow';
+    const evNames = (g.events || []).map(id => (events.find(e => e.id === id) || {}).name).filter(Boolean);
+    row.innerHTML = `<div class="info"><b>${esc(g.name)} ${g.team ? '<span class="badge team">team</span>' : ''}</b>
+      <span class="opts">${esc(g.options.join(' · '))}${g.multi ? '' : ' · one answer'}${g.task ? ' · adds follow-ups' : ''}${evNames.length ? ' · only at ' + esc(evNames.join(', ')) : ''}</span></div>`;
+    if (!g.team || isAdmin) {
+      const ed = document.createElement('button'); ed.type = 'button'; ed.className = 'iconbtn'; ed.textContent = 'Edit';
+      ed.addEventListener('click', () => editPick(g));
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'iconbtn danger'; del.textContent = 'Delete';
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete the quick picks "' + g.name + '"? Answers already given stay on the contacts.')) return;
+        await savePickList(g.team ? 'team' : 'mine', list => list.filter(x => x.id !== g.id), 'Deleted');
+      });
+      row.append(ed, del);
+    }
+    box.appendChild(row);
+  });
+}
+function renderPickEvents() {
+  const box = $('pickEvents'); box.innerHTML = '';
+  $('pickEventsRow').hidden = !events.length;
+  events.forEach(e => box.appendChild(chip(e.name, pickEventSel.has(e.id), '', () => { pickEventSel.has(e.id) ? pickEventSel.delete(e.id) : pickEventSel.add(e.id); renderPickEvents(); })));
+}
+function editPick(g) {
+  editingPick = g ? { scope: g.team ? 'team' : 'mine', id: g.id } : null;
+  $('pickFormTitle').textContent = g ? 'Edit "' + g.name + '"' : 'New set';
+  $('pickName').value = g ? g.name : '';
+  $('pickOptions').value = g ? g.options.join('\n') : '';
+  $('pickMulti').checked = g ? g.multi !== false : true;
+  $('pickTask').checked = !!(g && g.task);
+  $('pickTeam').checked = !!(g && g.team);
+  $('pickTeamRow').hidden = !(me && me.role === 'admin');
+  pickEventSel = new Set(g ? g.events || [] : []);
+  renderPickEvents();
+  $('pickCancel').hidden = !g;
+  if (g) $('pickName').focus();
+}
+async function savePickList(scope, change, msg) {
+  const base = scope === 'team' ? (picks.team || []) : mySets();
+  try {
+    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [], task: !!x.task }))) });
+    ls.set('ownerPicks', picks); renderPickList(); toast(msg); return true;
+  } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); return false; }
+}
+$('pickCancel').addEventListener('click', () => editPick(null));
+$('pickForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('pickSave'); btn.disabled = true;
+  const set = { id: editingPick ? editingPick.id : '', name: $('pickName').value.trim(), options: $('pickOptions').value.split(/\n+/).map(x => x.trim()).filter(Boolean),
+    multi: $('pickMulti').checked, events: [...pickEventSel], task: $('pickTask').checked };
+  const scope = me && me.role === 'admin' && $('pickTeam').checked ? 'team' : 'mine';
+  const moved = editingPick && editingPick.scope !== scope;
+  let ok = await savePickList(scope, list => editingPick && !moved ? list.map(x => (x.id === set.id ? set : x)) : list.concat(set), editingPick ? 'Saved' : 'Quick picks added');
+  if (ok && moved) ok = await savePickList(editingPick.scope, list => list.filter(x => x.id !== set.id), 'Saved');
+  if (ok) editPick(null);
+  btn.disabled = false;
+});
+
+function renderOcrLangs() {
+  const box = $('ocrLangChips'); box.innerHTML = '';
+  const on = ls.get('ocrLangs', ['fra', 'deu']);
+  OCR_LANGS.forEach(([code, label]) => box.appendChild(chip(label, on.includes(code), '', () => {
+    const now = ls.get('ocrLangs', ['fra', 'deu']);
+    ls.set('ocrLangs', now.includes(code) ? now.filter(x => x !== code) : now.concat(code));
+    renderOcrLangs();
+  })));
+}
+async function openSettings() {
+  show('vSettings');
+  renderStats();
+  renderPickList(); editPick(null);
+  renderOcrLangs();
+  $('camFrameOn').checked = ls.get('camFrame', null) !== false;
+  renderAccuracy();
+  $('appVersion').textContent = 'App version ' + APP_VERSION + (me && me.name ? ' · signed in as ' + me.name : '');
+  fillFuForm();
+  renderEvents(); editEvent(null);
+  $('installText').textContent = isStandalone
+    ? 'Installed. You are using the app from your home screen.'
+    : isIOS ? 'In Safari: tap Share, then "Add to Home Screen", and open the app from the new icon. On iPhone, notifications only work from the home screen app.'
+            : 'In Chrome: open the menu (three dots) and tap "Install app" or "Add to Home screen".';
+  $('installPanel').hidden = false;
+  const st = await pushState().catch(() => ({ supported: false }));
+  const on = st.supported && st.sub && st.permission === 'granted';
+  $('pushStatus').textContent = !st.supported
+    ? (isIOS && !isStandalone ? 'Add this app to your home screen first (see below), then open it from the icon.' : 'This browser does not support notifications.')
+    : st.permission === 'denied' ? 'Notifications are blocked. Allow them in your phone settings for this app.'
+    : on ? 'On. You get a notification as soon as someone shares their details.' : 'Off.';
+  $('pushOn').hidden = !st.supported || on || st.permission === 'denied';
+  $('pushTest').hidden = $('pushOff').hidden = !on;
+}
+
+async function serverKey() {
+  let key = await api('pushKey');
+  if (key) return key;
+  // First device ever: create the signing keys in this browser and store them on your own backend
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const jwk = await crypto.subtle.exportKey('jwk', pair.privateKey);
+  const pub = bytesToB64url(new Uint8Array([4, ...b64ToBytes(jwk.x), ...b64ToBytes(jwk.y)]));
+  return api('pushSetup', { publicKey: pub, privateKey: jwk.d });
+}
+
+$('pushOn').addEventListener('click', async e => {
+  const btn = e.target; btn.disabled = true;
+  try {
+    const perm = await Notification.requestPermission();      // must stay inside the tap
+    if (perm !== 'granted') throw new Error('Notifications were not allowed.');
+    const key = await serverKey();
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    await api('subscribe', { subscription: sub.toJSON(), deviceName: deviceName() });
+    toast('Notifications on');
+  } catch (err) { toast(err.message); }
+  btn.disabled = false;
+  openSettings();
+});
+
+$('pushTest').addEventListener('click', async () => {
+  try {
+    const r = await api('testPush');
+    const res = (r && r.results) || [];
+    const okCount = res.length ? res.filter(x => x.status >= 200 && x.status < 300).length : (r && r.sent) || 0;
+    toast(okCount ? 'Test sent. It shows your newest contact.' : 'Sending failed. Try turning notifications off and on.');
+  } catch (e) { toast(e.message); }
+});
+
+$('pushOff').addEventListener('click', async () => {
+  try {
+    const st = await pushState();
+    if (st.sub) { await api('unsubscribe', { endpoint: st.sub.endpoint }).catch(() => {}); await st.sub.unsubscribe(); }
+    toast('Notifications off');
+  } catch (e) { toast(e.message); }
+  openSettings();
+});
+
+/* ---------- auth ---------- */
+let inviteMode = false;
+function setInviteMode(on) {
+  inviteMode = on;
+  $('inviteRow').hidden = !on;
+  $('pwLabel').textContent = on ? 'Choose a password (min. 10 characters)' : 'Password';
+  $('pw').autocomplete = on ? 'new-password' : 'current-password';
+  $('loginBtn').textContent = on ? 'Activate account' : 'Sign in';
+  $('inviteToggle').textContent = on ? 'I already have a password' : 'First time? Use your invitation code';
+  $('loginIntro').textContent = on ? 'Enter the email address and invitation code from your administrator, and choose a password.' : 'Sign in with your email address and password.';
+  $('loginErr').textContent = '';
+}
+$('inviteToggle').addEventListener('click', () => setInviteMode(!inviteMode));
+$('loginId').value = ls.get('ownerLogin', '');
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = e.submitter; btn.disabled = true; $('loginErr').textContent = '';
+  try {
+    const res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action: inviteMode ? 'acceptInvite' : 'login', login: $('loginId').value.trim(), password: $('pw').value,
+        remember: $('remember').checked, deviceName: deviceName() }, inviteMode ? { code: $('inviteCode').value.trim() } : {})) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error);
+    token = j.data.token;
+    ls.set('ownerToken', token);
+    ls.set('ownerLogin', $('loginId').value.trim());
+    if (inviteMode) setInviteMode(false);
+    await idbSet('token', token);
+    await idbSet('endpoint', ENDPOINT);
+    $('pw').value = '';
+    if (!seenUpTo) { seenUpTo = new Date().toISOString(); ls.set('ownerSeen', seenUpTo); }
+    route(); refresh();
+  } catch (err) {
+    $('loginErr').textContent = /fetch/i.test(err.message) ? 'No connection. Sign in once while online.' : err.message;
+  }
+  btn.disabled = false;
+});
+
+function signOutLocal() {
+  token = null;
+  ls.del('ownerToken'); ls.del('ownerRecent'); ls.del('ownerQueue'); ls.del('ownerEvents'); ls.del('ownerFilter'); ls.del('ownerMe'); ls.del('ownerPicks'); ls.del('ownerPeople'); photoQueue = []; savePhotoQueue();
+  idbSet('token', null);
+  contacts = []; events = []; filter = '';
+  location.hash = '';
+  show('vLogin');
+}
+
+$('signOut').addEventListener('click', async () => {
+  if (queue().length && !confirm('Some changes have not synced yet and will be lost. Sign out anyway?')) return;
+  try { const st = await pushState(); if (st.sub) { await api('unsubscribe', { endpoint: st.sub.endpoint }); await st.sub.unsubscribe(); } } catch (e) {}
+  try { await api('logout'); } catch (e) {}
+  signOutLocal();
+});
+
+/* ---------- wiring ---------- */
+$('refreshBtn').addEventListener('click', () => { refresh(); flushQueue(); });
+$('settingsBtn').addEventListener('click', () => { location.hash = 'settings'; });
+$('backBtn').addEventListener('click', () => { location.hash = ''; });
+$('backBtn2').addEventListener('click', () => { location.hash = ''; });
+$('addBtn').addEventListener('click', () => { location.hash = 'add'; });
+window.addEventListener('online', () => { renderBanner(); flushQueue(); refresh(true); });
+window.addEventListener('offline', renderBanner);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && token) { flushQueue(); refresh(true); } });
+navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', ev => {
+  if (ev.data && ev.data.type === 'open' && ev.data.url) { location.hash = new URL(ev.data.url, location.href).hash.slice(1); }
+});
+
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;                                   // first install: nothing to refresh
+    if (!$('vList').hidden || !$('vLogin').hidden) location.reload();   // a new version took over: load it (not while editing)
+    else window.__updatePending = true;
+  });
+  window.addEventListener('hashchange', () => { if (window.__updatePending && location.hash === '') location.reload(); });
+  navigator.serviceWorker.register('sw.js').then(r => r.update && r.update()).catch(() => {});
+}
+loadConfig().then(() => {
+  if (token) { idbSet('token', token); idbSet('endpoint', ENDPOINT); }
+  route();
+  if (token) { flushQueue(); refresh(true); }
+});
+</script>
+</body>
+</html>

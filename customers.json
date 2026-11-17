@@ -1,0 +1,12 @@
+{
+  "_help": "One entry per customer. folder: the part after /Kaart/ in the links (a-z, 0-9 and -), or \"\" for the main address (your own installation). endpoint: the web app address the customer sends you (ends with /exec). defaultCardId: the card ID that is used when a link has none. version: \"latest\" (every update straight away) or a fixed version such as \"v2.17.0\" (stays on that version until you change it).",
+  "customers": [
+    {
+      "folder": "",
+      "name": "Own installation",
+      "endpoint": "https://script.google.com/macros/s/AKfycbzlhQaKWVXWg4YXDT2XWCuogz5AqtePS9K8AquANAXM7bhIhUJrmqFouGzTtBXAIRZK/exec",
+      "defaultCardId": "card-001",
+      "version": "latest"
+    }
+  ]
+}

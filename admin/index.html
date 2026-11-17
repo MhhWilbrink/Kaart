@@ -131,6 +131,8 @@
     <select id="editUser" hidden></select>
   </div>
 
+  <div class="panel" id="updateNotice" hidden style="border-left:4px solid #d97706"></div>
+
   <nav>
     <button data-tab="profile" class="active">Profile</button>
     <button data-tab="branding" data-admin>Branding</button>
@@ -463,12 +465,32 @@ async function load(userId) {
   return data;
 }
 
+// A newer server part (Apps Script) is available: tell administrators, with the files and the steps.
+// The files are published next to these pages (../downloads/) by the card provider.
+const newer = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+async function checkServerUpdate(st) {
+  const box = $('updateNotice');
+  if (!isAdmin() || !st || !st.version) return;
+  let latest;
+  try { latest = await (await fetch('../downloads/version.json', { cache: 'no-cache' })).json(); } catch (e) { return; }
+  const core = newer(latest.core, st.version), code = latest.code && (!st.codeVersion || newer(latest.code, st.codeVersion));
+  if (!core && !code) { box.hidden = true; return; }
+  const files = [code && '<a href="../downloads/Code.txt" download>Code.txt</a> (into the file <b>Code</b>)', core && '<a href="../downloads/Core.txt" download>Core.txt</a> (into the file <b>Core</b>)'].filter(Boolean);
+  box.innerHTML = '<h2>Update for the server part: version ' + escH(latest.core) + '</h2>' +
+    '<p class="hint" style="margin:0 0 8px">You have ' + escH(st.version) + '. The app and these pages are already up to date; this part runs in your own Google account, so you install it yourself (5 minutes).</p>' +
+    '<ol style="margin:0 0 0 18px;padding:0"><li>Download ' + files.join(' and ') + '.</li>' +
+    '<li>Open your contacts Sheet → <b>Extensions → Apps Script</b>. Select everything in that file and paste the new text over it. Save.</li>' +
+    '<li><b>Deploy → Manage deployments</b> → pencil → Version: <b>New version</b> → <b>Deploy</b>.</li>' +
+    '<li>Reload this page: this message disappears.</li></ol>';
+  box.hidden = false;
+}
+
 async function openApp(userId) {
   await load(userId);
   $('loginView').hidden = true;
   $('appView').hidden = false;
   $('versionInfo').textContent = 'Version ' + (state.version || '');
-  postApi('setupStatus').then(st => { $('appVersionInfo').textContent = 'Version ' + st.version; }).catch(() => {});
+  postApi('setupStatus').then(st => { $('appVersionInfo').textContent = 'Version ' + st.version; checkServerUpdate(st); }).catch(() => {});
   document.querySelectorAll('nav [data-admin]').forEach(b => b.hidden = !isAdmin());
   const active = document.querySelector('nav button.active');
   if (active && active.hidden) document.querySelector('nav [data-tab=profile]').click();
