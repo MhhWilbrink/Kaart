@@ -352,6 +352,11 @@
         <input id="pickName" maxlength="30" placeholder="e.g. Interest" autocomplete="off">
         <label for="pickOptions">Options, one per line</label>
         <textarea id="pickOptions" rows="4" placeholder="Product A&#10;Product B&#10;Service"></textarea>
+        <div id="pickTextsRow" hidden>
+          <label>Text in the follow-up email <span class="muted">(optional, per answer)</span></label>
+          <p class="small muted" style="margin:0 0 6px">Added to the <b>Follow-up email</b> when this answer is chosen. Tip: a link to a brochure or datasheet, for example a shared Google Drive link.</p>
+          <div id="pickTexts"></div>
+        </div>
         <label class="check-row"><input type="checkbox" id="pickMulti" checked> More than one answer allowed</label>
         <label class="check-row"><input type="checkbox" id="pickTask"> Tapping an answer adds a follow-up (in 1 week)</label>
         <div id="pickEventsRow">
@@ -378,7 +383,8 @@
     <div class="panel">
       <h2>Follow-up email</h2>
       <p class="small muted" style="margin:0 0 6px">Used by the <b>Follow-up email</b> button on a contact. Placeholders:
-        {firstName} {name} {company} {event} {atEvent} {myName} {myFirstName} {myTitle} {myCompany} {myPhone} {myEmail} {myCard}</p>
+        {firstName} {name} {company} {event} {atEvent} {info} {myName} {myFirstName} {myTitle} {myCompany} {myPhone} {myEmail} {myCard}.
+        <b>{info}</b> is replaced by the texts of the quick-pick answers chosen for that contact.</p>
       <label for="fuSubject">Subject</label>
       <input id="fuSubject" maxlength="150">
       <label for="fuBody">Message</label>
@@ -474,7 +480,7 @@ async function loadConfig() {
   }
 }
 
-const APP_VERSION = '2.17.0';
+const APP_VERSION = '2.18.0';
 const TEMPS = ['Hot', 'Warm', 'Cold'];
 const ACTIONS = ['Send datasheet', 'Schedule meeting', 'Send quote', 'Intro to colleague', 'Connect on LinkedIn'];
 const SOURCES = { 'in person': 'Met in person', whatsapp: 'WhatsApp', email: 'Email', badge: 'Badge / card', manual: 'Added manually' };
@@ -1634,23 +1640,45 @@ $('accReset').addEventListener('click', () => { if (confirm('Reset the scanner s
 /* ---------- follow-up email and calendar ---------- */
 const DEFAULT_FU = {
   subject: 'Good to meet you{atEvent}',
-  body: 'Dear {firstName},\n\nThank you for the good conversation{atEvent}. As promised, I am following up on what we discussed.\n\n\n\nPlease let me know if you have any questions.\n\nKind regards,\n\n{myName}\n{myTitle}\n{myCompany}\n{myPhone}\n{myCard}'
+  body: 'Dear {firstName},\n\nThank you for the good conversation{atEvent}. As promised, I am following up on what we discussed.\n\n{info}\n\nPlease let me know if you have any questions.\n\nKind regards,\n\n{myName}\n{myTitle}\n{myCompany}\n{myPhone}\n{myCard}'
 };
 function fuTemplate() {
   const p = (me && me.profile) || {};
   return { subject: p.followUpSubject || DEFAULT_FU.subject, body: p.followUpBody || DEFAULT_FU.body };
 }
+// The texts of the quick-pick answers chosen for this contact (in the order of the sets and answers).
+function infoTexts(c) {
+  const tags = new Set(c === current && form ? [...form.tags] : (c.tags || []));
+  const out = [];
+  allSets().forEach(g => (g.options || []).forEach(o => {
+    const t = g.texts && g.texts[o];
+    if (t && tags.has(pickTag(g, o)) && !out.includes(t)) out.push(t);
+  }));
+  return out.join('\n\n');
+}
 function fillTemplate(text, c) {
   const p = (me && me.profile) || {};
+  // a saved text from before {info} existed: put the texts above the closing lines
+  if (!/\{info\}/.test(text) && infoTexts(c)) {
+    const lines = text.split('\n');
+    let at = lines.findIndex(l => /^\s*(kind|best|warm|many thanks|regards|met vriendelijke|vriendelijke groet|mit freundlichen|cordialement|bien à vous|cheers|thanks)/i.test(l));
+    if (at < 0) at = lines.findIndex(l => /\{my\w+\}/.test(l));
+    if (at < 0) at = lines.length;
+    lines.splice(at, 0, '{info}', '');
+    text = lines.join('\n');
+  }
   const ev = eventsOf(c)[0];
   const first = clean(c.name).split(' ')[0] || '';
   const vals = {
     firstName: first, name: clean(c.name), company: clean(c.company), event: ev ? ev.name : '', atEvent: ev ? ' at ' + ev.name : '',
     myName: [p.firstName, p.lastName].filter(Boolean).join(' '), myFirstName: p.firstName || '', myTitle: p.title || '', myCompany: p.company || '',
-    myPhone: p.phone || '', myEmail: p.email || '', myCard: me && me.slug ? new URL('../?u=' + encodeURIComponent(me.slug), location.href).href : ''
+    myPhone: p.phone || '', myEmail: p.email || '', myCard: me && me.slug ? new URL('../?u=' + encodeURIComponent(me.slug), location.href).href : '',
+    info: infoTexts(c)
   };
-  return text.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m))
-    .split('\n').filter((line, i, arr) => !(line.trim() === '' && /\{my\w+\}/.test((text.split('\n')[i] || '')))).join('\n')   // drop empty signature lines
+  // line by line, so a signature line whose value is empty ({myPhone} without a phone) can be left out
+  return text.split('\n').map(line => ({ line, out: line.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m)) }))
+    .filter(x => !(x.out.trim() === '' && /\{my\w+\}/.test(x.line)))
+    .map(x => x.out).join('\n')
     .replace(/\n{4,}/g, '\n\n\n');
 }
 /* ---------- save to the phone's contacts (vCard) ---------- */
@@ -2199,11 +2227,32 @@ function renderPickEvents() {
   $('pickEventsRow').hidden = !events.length;
   events.forEach(e => box.appendChild(chip(e.name, pickEventSel.has(e.id), '', () => { pickEventSel.has(e.id) ? pickEventSel.delete(e.id) : pickEventSel.add(e.id); renderPickEvents(); })));
 }
+// one text box per answer; what was typed is kept while the answers are being edited
+let pickTexts = {};
+function pickOptionList() { return $('pickOptions').value.split(/\n+/).map(x => x.trim()).filter(Boolean); }
+function renderPickTexts() {
+  const box = $('pickTexts'), opts = pickOptionList();
+  box.querySelectorAll('textarea').forEach(t => { pickTexts[t.dataset.opt] = t.value; });
+  $('pickTextsRow').hidden = !opts.length;
+  box.innerHTML = '';
+  opts.forEach(o => {
+    const l = document.createElement('label'); l.className = 'small'; l.style.margin = '8px 0 2px'; l.textContent = o;
+    const t = document.createElement('textarea'); t.rows = 2; t.maxLength = 600; t.dataset.opt = o;
+    t.placeholder = 'e.g. Our brochure on ' + o + ': https://…';
+    const key = Object.keys(pickTexts).find(k => k.toLowerCase() === o.toLowerCase());
+    t.value = key ? pickTexts[key] : '';
+    box.append(l, t);
+  });
+}
+$('pickOptions').addEventListener('change', renderPickTexts);
+$('pickOptions').addEventListener('blur', renderPickTexts);
 function editPick(g) {
   editingPick = g ? { scope: g.team ? 'team' : 'mine', id: g.id } : null;
   $('pickFormTitle').textContent = g ? 'Edit "' + g.name + '"' : 'New set';
   $('pickName').value = g ? g.name : '';
   $('pickOptions').value = g ? g.options.join('\n') : '';
+  pickTexts = Object.assign({}, (g && g.texts) || {});
+  renderPickTexts();
   $('pickMulti').checked = g ? g.multi !== false : true;
   $('pickTask').checked = !!(g && g.task);
   $('pickTeam').checked = !!(g && g.team);
@@ -2216,7 +2265,7 @@ function editPick(g) {
 async function savePickList(scope, change, msg) {
   const base = scope === 'team' ? (picks.team || []) : mySets();
   try {
-    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [], task: !!x.task }))) });
+    picks = await api('saveQuickPicks', { scope, sets: change(base.map(x => ({ id: x.id, name: x.name, options: x.options, multi: x.multi, events: x.events || [], task: !!x.task, texts: x.texts || {} }))) });
     ls.set('ownerPicks', picks); renderPickList(); toast(msg); return true;
   } catch (err) { toast(navigator.onLine ? err.message : 'You are offline. Try again when online.'); return false; }
 }
@@ -2224,8 +2273,11 @@ $('pickCancel').addEventListener('click', () => editPick(null));
 $('pickForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = $('pickSave'); btn.disabled = true;
-  const set = { id: editingPick ? editingPick.id : '', name: $('pickName').value.trim(), options: $('pickOptions').value.split(/\n+/).map(x => x.trim()).filter(Boolean),
-    multi: $('pickMulti').checked, events: [...pickEventSel], task: $('pickTask').checked };
+  renderPickTexts();
+  const options = pickOptionList(), texts = {};
+  options.forEach(o => { const k = Object.keys(pickTexts).find(x => x.toLowerCase() === o.toLowerCase()); if (k && pickTexts[k].trim()) texts[o] = pickTexts[k].trim(); });
+  const set = { id: editingPick ? editingPick.id : '', name: $('pickName').value.trim(), options,
+    multi: $('pickMulti').checked, events: [...pickEventSel], task: $('pickTask').checked, texts };
   const scope = me && me.role === 'admin' && $('pickTeam').checked ? 'team' : 'mine';
   const moved = editingPick && editingPick.scope !== scope;
   let ok = await savePickList(scope, list => editingPick && !moved ? list.map(x => (x.id === set.id ? set : x)) : list.concat(set), editingPick ? 'Saved' : 'Quick picks added');
