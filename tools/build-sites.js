@@ -14,14 +14,18 @@ if (!Array.isArray(list) || !list.length) fail('"customers" must be a list with 
 
 // shared pages and server files of a version: the current ones, or those of a release tag (v2.17.0)
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sites-'));
+// versions.json lists each release and its commit, so no git tags are needed
+const RELEASES = fs.existsSync('versions.json') ? JSON.parse(fs.readFileSync('versions.json', 'utf8')) : {};
 function source(version) {
   if (!version || version === 'latest') return { site: 'site', google: 'google' };
   if (!/^v\d+\.\d+\.\d+$/.test(version)) fail('version "' + version + '" must be "latest" or like "v2.17.0"');
+  const ref = RELEASES[version] || version;
+  if (!/^[0-9a-f]{7,40}$|^v\d+\.\d+\.\d+$/.test(ref)) fail('versions.json: bad commit for ' + version);
   const dir = path.join(tmp, version);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir);
-    try { cp.execSync('git archive ' + version + ' site google | tar -x -C ' + JSON.stringify(dir), { stdio: 'pipe' }); }
-    catch (e) { fail('version ' + version + ' does not exist (no such release tag)'); }
+    try { cp.execSync('git archive ' + ref + ' site google | tar -x -C ' + JSON.stringify(dir), { stdio: 'pipe' }); }
+    catch (e) { fail('version ' + version + ' is unknown (not in versions.json)'); }
   }
   return { site: path.join(dir, 'site'), google: path.join(dir, 'google') };
 }

@@ -29,7 +29,7 @@ The entry with `"folder": ""` is the main address (`https://mhhwilbrink.github.i
 ## Updates
 
 - New pages: every customer with `"version": "latest"` gets them automatically.
-- Hold a customer back: set `"version": "v2.17.0"` (any release tag).
+- Hold a customer back: set `"version": "v2.17.0"`. The available versions are listed in `versions.json`.
 - Server part (Apps Script): runs in the customer's own Google account, so their administrator installs it.
   The admin page shows a notice with the files and the steps as soon as a newer version is published.
 
